@@ -15,7 +15,11 @@ type PaymentRequest = {
     name: string;
     price: number;
     duration_days: number;
-  } | null;
+  } | {
+    name: string;
+    price: number;
+    duration_days: number;
+  }[] | null;
 };
 
 export default function AdminPaymentsPage() {
@@ -77,8 +81,18 @@ export default function AdminPaymentsPage() {
       return;
     }
 
-    setPayments((data || []) as PaymentRequest[]);
+    setPayments((data || []) as unknown as PaymentRequest[]);
     setLoading(false);
+  }
+
+  function getPlan(payment: PaymentRequest) {
+    if (!payment.plans) return null;
+
+    if (Array.isArray(payment.plans)) {
+      return payment.plans[0] || null;
+    }
+
+    return payment.plans;
   }
 
   if (loading) {
@@ -92,7 +106,9 @@ export default function AdminPaymentsPage() {
   return (
     <main className="min-h-screen bg-[#080808] px-5 py-10 text-white">
       <div className="mx-auto max-w-7xl">
-        <h1 className="text-4xl font-black">Admin Payments</h1>
+        <h1 className="text-4xl font-black">
+          Admin Payments
+        </h1>
 
         <p className="mt-2 text-white/40">
           Manage customer payment requests.
@@ -110,56 +126,78 @@ export default function AdminPaymentsPage() {
               No payment requests found.
             </div>
           ) : (
-            payments.map((payment) => (
-              <div
-                key={payment.id}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"
-              >
-                <div className="grid gap-5 md:grid-cols-5">
-                  <div>
-                    <p className="text-xs text-white/30">User ID</p>
-                    <p className="mt-2 break-all text-sm">
-                      {payment.user_id}
-                    </p>
+            payments.map((payment) => {
+              const plan = getPlan(payment);
+
+              return (
+                <div
+                  key={payment.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"
+                >
+                  <div className="grid gap-5 md:grid-cols-5">
+                    <div>
+                      <p className="text-xs text-white/30">
+                        User ID
+                      </p>
+
+                      <p className="mt-2 break-all text-sm">
+                        {payment.user_id}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-white/30">
+                        Plan
+                      </p>
+
+                      <p className="mt-2 font-semibold">
+                        {plan?.name ||
+                          `Plan #${payment.plan_id}`}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-white/30">
+                        Amount
+                      </p>
+
+                      <p className="mt-2 font-bold">
+                        ₹{plan?.price ?? "-"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-white/30">
+                        UTR
+                      </p>
+
+                      <p className="mt-2 break-all text-sm">
+                        {payment.utr}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-white/30">
+                        Status
+                      </p>
+
+                      <p className="mt-2 font-semibold uppercase">
+                        {payment.status}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs text-white/30">Plan</p>
-                    <p className="mt-2 font-semibold">
-                      {payment.plans?.name || `Plan #${payment.plan_id}`}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-white/30">Amount</p>
-                    <p className="mt-2 font-bold">
-                      ₹{payment.plans?.price ?? "-"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-white/30">UTR</p>
-                    <p className="mt-2 break-all text-sm">
-                      {payment.utr}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-white/30">Status</p>
-                    <p className="mt-2 font-semibold uppercase">
-                      {payment.status}
+                  <div className="mt-5 border-t border-white/10 pt-5">
+                    <p className="text-xs text-white/30">
+                      Submitted:{" "}
+                      {new Date(
+                        payment.created_at
+                      ).toLocaleString()}
                     </p>
                   </div>
                 </div>
-
-                <div className="mt-5 border-t border-white/10 pt-5">
-                  <p className="text-xs text-white/30">
-                    Submitted:{" "}
-                    {new Date(payment.created_at).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
