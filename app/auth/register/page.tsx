@@ -1,118 +1,54 @@
 "use client";
 
-import {
-  FormEvent,
-  Suspense,
-  useEffect,
-  useState,
-} from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-function LoginForm() {
+function RegisterForm() {
   const searchParams = useSearchParams();
-
   const planId = searchParams.get("plan");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  // ============================================================
-  // SAVE SELECTED PLAN
-  // ============================================================
-
-  useEffect(() => {
-    if (planId) {
-      localStorage.setItem(
-        "pending_plan_id",
-        planId
-      );
-    }
-  }, [planId]);
-
-  // ============================================================
-  // LOGIN
-  // ============================================================
-
-  async function handleLogin(
-    e: FormEvent<HTMLFormElement>
-  ) {
+  async function handleRegister(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     setError("");
     setMessage("");
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      setError("Please enter your email.");
+      return;
+    }
+
+    if (!password) {
+      setError("Please enter your password.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const selectedPlanId =
-        planId ||
-        localStorage.getItem(
-          "pending_plan_id"
-        );
-
-      // --------------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------------
-
-      const cleanEmail = email
-        .trim()
-        .toLowerCase();
-
-      if (!cleanEmail) {
-        setError(
-          "Please enter your email."
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (!password) {
-        setError(
-          "Please enter your password."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // --------------------------------------------------------
-      // SUPABASE LOGIN
-      // --------------------------------------------------------
-
-      const {
-        data,
-        error: loginError,
-      } =
-        await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-
-      if (loginError) {
-        console.error(
-          "Login error:",
-          loginError
-        );
-
-        setError(loginError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!data.user) {
-        setError(
-          "Login nahi ho paya. Please try again."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // --------------------------------------------------------
-      // KEEP SELECTED PLAN
-      // --------------------------------------------------------
+        planId || localStorage.getItem("pending_plan_id");
 
       if (selectedPlanId) {
         localStorage.setItem(
@@ -121,77 +57,81 @@ function LoginForm() {
         );
       }
 
-      setMessage(
-        "Login successful. Redirecting..."
-      );
+      const { data, error: signupError } =
+        await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+        });
 
-      // --------------------------------------------------------
-      // REDIRECT
-      // --------------------------------------------------------
+      if (signupError) {
+        console.error("Signup error:", signupError);
+        setError(signupError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!data.user) {
+        setError(
+          "Account create nahi ho paya. Please try again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Email verification enabled
+      if (!data.session) {
+        setMessage(
+          "Account create ho gaya! Please apni email verify karein, phir login karein."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Account created and logged in
+      setMessage("Account successfully create ho gaya.");
 
       setTimeout(() => {
         if (selectedPlanId) {
-          window.location.href =
-            `/?openPlan=${selectedPlanId}`;
+          window.location.href = `/?plan=${selectedPlanId}`;
         } else {
           window.location.href = "/";
         }
-      }, 500);
+      }, 700);
     } catch (err: any) {
-      console.error(
-        "Login error:",
-        err
-      );
+      console.error("Register error:", err);
 
       setError(
         err?.message ||
-          "Login nahi ho paya. Please try again."
+          "Account create nahi ho paya. Please try again."
       );
 
       setLoading(false);
     }
   }
 
-  // ============================================================
-  // PAGE
-  // ============================================================
-
   return (
     <main className="min-h-screen bg-[#070707] text-white">
 
-      {/* ======================================================
-          BACKGROUND
-      ====================================================== */}
-
+      {/* BACKGROUND */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-
         <div className="absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-white/[0.05] blur-[120px]" />
 
         <div className="absolute bottom-0 left-0 h-[400px] w-[400px] rounded-full bg-blue-500/[0.03] blur-[120px]" />
-
       </div>
 
-      {/* ======================================================
-          NAVBAR
-      ====================================================== */}
-
+      {/* NAVBAR */}
       <nav className="relative z-10 border-b border-white/10 bg-[#070707]/80 backdrop-blur-xl">
-
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
-
-          {/* LOGO */}
 
           <a
             href="/"
             className="flex items-center gap-3"
           >
-
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white font-black text-black">
               V
             </div>
 
             <div>
-
               <div className="text-lg font-bold">
                 VideoStream
               </div>
@@ -199,38 +139,30 @@ function LoginForm() {
               <div className="text-[10px] uppercase tracking-[0.25em] text-white/35">
                 Premium
               </div>
-
             </div>
-
           </a>
 
-          {/* CREATE ACCOUNT */}
-
+          {/* LOGIN */}
           <a
             href={
               planId
-                ? `/auth/register?plan=${planId}`
-                : "/auth/register"
+                ? `/auth/login?plan=${planId}`
+                : "/auth/login"
             }
             className="rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold transition hover:bg-white/[0.05]"
           >
-            Create Account
+            Login
           </a>
 
         </div>
-
       </nav>
 
-      {/* ======================================================
-          LOGIN SECTION
-      ====================================================== */}
-
+      {/* REGISTER */}
       <section className="relative z-10 flex min-h-[calc(100vh-80px)] items-center justify-center px-5 py-12">
 
         <div className="w-full max-w-md">
 
           {/* HEADER */}
-
           <div className="mb-8 text-center">
 
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black shadow-2xl">
@@ -238,28 +170,25 @@ function LoginForm() {
             </div>
 
             <h1 className="mt-6 text-3xl font-black tracking-tight sm:text-4xl">
-              Welcome back
+              Create your account
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-white/45">
-              Login to continue watching premium videos.
+              Create an account to access premium videos.
             </p>
 
           </div>
 
-          {/* LOGIN CARD */}
-
+          {/* CARD */}
           <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-6 shadow-2xl backdrop-blur-xl sm:p-8">
 
             <form
-              onSubmit={handleLogin}
+              onSubmit={handleRegister}
               className="space-y-5"
             >
 
               {/* EMAIL */}
-
               <div>
-
                 <label
                   htmlFor="email"
                   className="text-sm font-semibold text-white/80"
@@ -279,13 +208,10 @@ function LoginForm() {
                   disabled={loading}
                   className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
                 />
-
               </div>
 
               {/* PASSWORD */}
-
               <div>
-
                 <label
                   htmlFor="password"
                   className="text-sm font-semibold text-white/80"
@@ -300,84 +226,106 @@ function LoginForm() {
                   onChange={(e) =>
                     setPassword(e.target.value)
                   }
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
+                  placeholder="Minimum 6 characters"
+                  autoComplete="new-password"
                   disabled={loading}
                   className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
                 />
 
+                <p className="mt-2 text-xs text-white/30">
+                  Password kam se kam 6 characters ka hona chahiye.
+                </p>
+              </div>
+
+              {/* CONFIRM PASSWORD */}
+              <div>
+                <label
+                  htmlFor="confirmPassword"
+                  className="text-sm font-semibold text-white/80"
+                >
+                  Confirm Password
+                </label>
+
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) =>
+                    setConfirmPassword(e.target.value)
+                  }
+                  placeholder="Enter password again"
+                  autoComplete="new-password"
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
+                />
               </div>
 
               {/* ERROR */}
-
               {error && (
                 <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-
                   <p className="text-sm leading-6 text-red-300">
                     {error}
                   </p>
-
                 </div>
               )}
 
               {/* SUCCESS */}
-
               {message && (
                 <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4">
-
                   <p className="text-sm leading-6 text-green-300">
                     {message}
                   </p>
-
                 </div>
               )}
 
-              {/* LOGIN BUTTON */}
-
+              {/* REGISTER BUTTON */}
               <button
                 type="submit"
                 disabled={loading}
                 className="w-full rounded-full bg-white py-4 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
-                  ? "Logging in..."
-                  : "Login"}
+                  ? "Creating Account..."
+                  : "Create Account"}
               </button>
 
             </form>
 
-            {/* CREATE ACCOUNT */}
-
+            {/* LOGIN */}
             <div className="mt-7 border-t border-white/10 pt-6 text-center">
 
               <p className="text-sm text-white/40">
-                Don't have an account?
+                Already have an account?
               </p>
 
               <a
                 href={
                   planId
-                    ? `/auth/register?plan=${planId}`
-                    : "/auth/register"
+                    ? `/auth/login?plan=${planId}`
+                    : "/auth/login"
                 }
                 className="mt-2 inline-block text-sm font-semibold text-white hover:underline"
               >
-                Create account →
+                Login to your account →
               </a>
 
             </div>
 
           </div>
 
-          {/* BACK HOME */}
-
+          {/* FOOTER */}
           <div className="mt-7 text-center">
+
+            <p className="text-xs leading-5 text-white/25">
+              By creating an account, you agree to our
+              Terms of Service and Privacy Policy.
+            </p>
 
             <a
               href="/"
-              className="text-xs text-white/35 transition hover:text-white"
+              className="mt-4 inline-block text-xs text-white/35 hover:text-white"
             >
-              ← Back to home
+              ← Back to VideoStream
             </a>
 
           </div>
@@ -390,33 +338,18 @@ function LoginForm() {
   );
 }
 
-// ============================================================
-// LOGIN PAGE
-// Suspense fixes useSearchParams prerender error
-// ============================================================
-
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-[#070707] text-white">
-
-          <div className="text-center">
-
-            <div className="mx-auto flex h-12 w-12 animate-pulse items-center justify-center rounded-xl bg-white font-black text-black">
-              V
-            </div>
-
-            <p className="mt-4 text-sm text-white/50">
-              Loading...
-            </p>
-
+          <div className="text-sm text-white/50">
+            Loading...
           </div>
-
         </main>
       }
     >
-      <LoginForm />
+      <RegisterForm />
     </Suspense>
   );
 }
