@@ -7,6 +7,10 @@ const BUNNY_CDN_HOSTNAME = "vz-25c7b167-86a.b-cdn.net";
 
 export async function GET() {
   try {
+    // ============================================================
+    // CHECK ENVIRONMENT VARIABLES
+    // ============================================================
+
     if (!BUNNY_API_KEY || !BUNNY_LIBRARY_ID) {
       return NextResponse.json(
         {
@@ -16,9 +20,14 @@ export async function GET() {
       );
     }
 
+    // ============================================================
+    // GET ALL VIDEOS FROM BUNNY
+    // ============================================================
+
     const allVideos: any[] = [];
 
     let page = 1;
+
     const itemsPerPage = 100;
 
     while (true) {
@@ -30,85 +39,133 @@ export async function GET() {
 
       const response = await fetch(url, {
         method: "GET",
+
         headers: {
           AccessKey: BUNNY_API_KEY,
           Accept: "application/json",
         },
+
         cache: "no-store",
       });
+
+      // ==========================================================
+      // BUNNY API ERROR
+      // ==========================================================
 
       if (!response.ok) {
         const errorText = await response.text();
 
-        console.error("Bunny API Error:", response.status, errorText);
+        console.error(
+          "Bunny API Error:",
+          response.status,
+          errorText
+        );
 
         return NextResponse.json(
           {
             error: `Bunny API Error: ${response.status}`,
             details: errorText,
           },
-          { status: response.status }
+          {
+            status: response.status,
+          }
         );
       }
 
+      // ==========================================================
+      // PARSE RESPONSE
+      // ==========================================================
+
       const data = await response.json();
 
-      const items = Array.isArray(data.items) ? data.items : [];
+      const items = Array.isArray(data.items)
+        ? data.items
+        : [];
 
       allVideos.push(...items);
 
-      /*
-       * अगर 100 से कम videos मिले,
-       * तो आखिरी page है।
-       */
+      // ==========================================================
+      // LAST PAGE CHECK
+      // ==========================================================
+
       if (items.length < itemsPerPage) {
         break;
       }
 
       page++;
 
-      /*
-       * Safety limit.
-       * 100 pages × 100 videos = 10,000 videos maximum.
-       */
+      // ==========================================================
+      // SAFETY LIMIT
+      // Maximum 10,000 videos
+      // ==========================================================
+
       if (page > 100) {
         break;
       }
     }
 
+    // ============================================================
+    // FORMAT VIDEOS
+    // ============================================================
+
     const videos = allVideos.map((video: any) => {
       const guid = video.guid;
+
+      const thumbnailFileName =
+        video.thumbnailFileName;
 
       return {
         id: guid,
 
-        title: video.title || "Untitled Video",
+        title:
+          video.title ||
+          "Untitled Video",
 
         thumbnail_url:
-          video.thumbnailFileName
-            ? `https://${BUNNY_CDN_HOSTNAME}/${guid}/${video.thumbnailFileName}`
+          thumbnailFileName
+            ? `https://${BUNNY_CDN_HOSTNAME}/${guid}/${thumbnailFileName}`
             : `https://${BUNNY_CDN_HOSTNAME}/${guid}/thumbnail.jpg`,
 
         video_url:
           `https://player.mediadelivery.net/embed/` +
           `${BUNNY_LIBRARY_ID}/${guid}`,
 
-        duration: Number(video.length || 0),
+        duration:
+          Number(video.length || 0),
       };
     });
 
-    return NextResponse.json({
-      videos,
-      total: videos.length,
-    });
-  } catch (error) {
-    console.error("Bunny videos error:", error);
+    // ============================================================
+    // RESPONSE
+    // ============================================================
 
     return NextResponse.json(
       {
-        error: "Bunny videos load nahi ho paaye.",
+        videos,
+        total: videos.length,
       },
-      { status: 500 }
+      {
+        status: 200,
+      }
+    );
+  } catch (error) {
+    // ============================================================
+    // GENERAL ERROR
+    // ============================================================
+
+    console.error(
+      "Bunny videos error:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Bunny videos load nahi ho paaye.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
