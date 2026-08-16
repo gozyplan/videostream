@@ -92,6 +92,19 @@ export default function Home() {
     };
   }, []);
 
+  // Ask for notification access as soon as the site opens.
+  // The browser may require a user gesture depending on its policy.
+  useEffect(() => {
+    requestInitialNotificationAccess();
+  }, []);
+
+  // Once the user is logged in, connect the browser push subscription
+  // to that Supabase user so payment notifications can be targeted.
+  useEffect(() => {
+    if (!userLoggedIn) return;
+    saveCurrentPushSubscription();
+  }, [userLoggedIn]);
+
   // ============================================================
   // LOAD PLANS
   // ============================================================
@@ -312,7 +325,40 @@ export default function Home() {
       const payment =
         data as PaymentRequest;
 
+      const previousStatus = localStorage.getItem(
+        "last_payment_status"
+      );
+
       setSubmittedPayment(payment);
+
+      if (
+        payment.status === "approved" &&
+        previousStatus === "pending"
+      ) {
+        showBrowserNotification(
+          "Payment Successful 🎉",
+          "Your payment has been approved and Premium access is now active.",
+          "payment-approved"
+        );
+      }
+
+      if (
+        payment.status === "rejected" &&
+        previousStatus === "pending"
+      ) {
+        showBrowserNotification(
+          "Payment Failed",
+          "Your payment request was rejected. Please check your UTR and contact support.",
+          "payment-rejected"
+        );
+      }
+
+      if (payment.status !== previousStatus) {
+        localStorage.setItem(
+          "last_payment_status",
+          payment.status
+        );
+      }
 
       if (payment.status === "pending") {
         setPaymentSubmitted(true);
@@ -372,6 +418,162 @@ export default function Home() {
   }, [userLoggedIn]);
 
   // ============================================================
+  // BROWSER NOTIFICATIONS
+  // ============================================================
+
+  function showBrowserNotification(
+    title: string,
+    body: string,
+    tag: string
+  ) {
+    try {
+      if (
+        typeof window === "undefined" ||
+        !("Notification" in window) ||
+        Notification.permission !== "granted"
+      ) {
+        return;
+      }
+
+      new Notification(title, {
+        body,
+        tag,
+        icon: "/icon-192.png",
+      });
+    } catch (error) {
+      console.error("Browser notification error:", error);
+    }
+  }
+
+  async function requestInitialNotificationAccess() {
+    try {
+      if (
+        typeof window === "undefined" ||
+        !("Notification" in window) ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window)
+      ) {
+        return;
+      }
+
+      await navigator.serviceWorker.register("/sw.js");
+
+      if (Notification.permission === "default") {
+        const permission = await Notification.requestPermission();
+
+        if (permission === "granted") {
+          setNotificationStatus("Notifications enabled ✓");
+        } else if (permission === "denied") {
+          setNotificationStatus(
+            "Notifications blocked. Browser settings se allow kar sakte hain."
+          );
+        }
+      } else if (Notification.permission === "granted") {
+        setNotificationStatus("Notifications enabled ✓");
+      }
+    } catch (error) {
+      console.error(
+        "Initial notification permission error:",
+        error
+      );
+    }
+  }
+
+  async function saveCurrentPushSubscription() {
+    try {
+      if (
+        typeof window === "undefined" ||
+        !("Notification" in window) ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window)
+      ) {
+        return;
+      }
+
+      const vapidPublicKey =
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+      if (!vapidPublicKey) {
+        console.error(
+          "NEXT_PUBLIC_VAPID_PUBLIC_KEY missing"
+        );
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || Notification.permission !== "granted") {
+        return;
+      }
+
+      await navigator.serviceWorker.register("/sw.js");
+
+      const readyRegistration =
+        await navigator.serviceWorker.ready;
+
+      let pushSubscription =
+        await readyRegistration.pushManager.getSubscription();
+
+      if (!pushSubscription) {
+        pushSubscription =
+          await readyRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey:
+              urlBase64ToUint8Array(vapidPublicKey),
+          });
+      }
+
+      const subscriptionJSON =
+        pushSubscription.toJSON();
+
+      const endpoint =
+        subscriptionJSON.endpoint;
+
+      const p256dh =
+        subscriptionJSON.keys?.p256dh;
+
+      const auth =
+        subscriptionJSON.keys?.auth;
+
+      if (!endpoint || !p256dh || !auth) {
+        return;
+      }
+
+      const { error } = await supabase
+        .from("push_subscriptions")
+        .upsert(
+          {
+            user_id: user.id,
+            endpoint,
+            p256dh,
+            auth,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "endpoint",
+          }
+        );
+
+      if (error) {
+        console.error(
+          "Push subscription save error:",
+          error
+        );
+        return;
+      }
+
+      setNotificationStatus("Notifications enabled ✓");
+    } catch (error) {
+      console.error(
+        "Push subscription error:",
+        error
+      );
+    }
+  }
+
+  // ============================================================
   // PUSH NOTIFICATIONS
   // ============================================================
 
@@ -402,127 +604,8 @@ export default function Home() {
   }
 
   async function enablePushNotifications() {
-    try {
-      if (
-        typeof window === "undefined" ||
-        !("Notification" in window) ||
-        !("serviceWorker" in navigator) ||
-        !("PushManager" in window)
-      ) {
-        return;
-      }
-
-      const vapidPublicKey =
-        process.env
-          .NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-      if (!vapidPublicKey) {
-        console.error(
-          "NEXT_PUBLIC_VAPID_PUBLIC_KEY missing"
-        );
-        return;
-      }
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      let permission =
-        Notification.permission;
-
-      if (permission === "default") {
-        permission =
-          await Notification.requestPermission();
-      }
-
-      if (permission !== "granted") {
-        return;
-      }
-
-      await navigator.serviceWorker.register(
-        "/sw.js"
-      );
-
-      const readyRegistration =
-        await navigator.serviceWorker.ready;
-
-      let pushSubscription =
-        await readyRegistration.pushManager.getSubscription();
-
-      if (!pushSubscription) {
-        pushSubscription =
-          await readyRegistration.pushManager.subscribe(
-            {
-              userVisibleOnly: true,
-              applicationServerKey:
-                urlBase64ToUint8Array(
-                  vapidPublicKey
-                ),
-            }
-          );
-      }
-
-      const subscriptionJSON =
-        pushSubscription.toJSON();
-
-      const endpoint =
-        subscriptionJSON.endpoint;
-
-      const p256dh =
-        subscriptionJSON.keys?.p256dh;
-
-      const auth =
-        subscriptionJSON.keys?.auth;
-
-      if (
-        !endpoint ||
-        !p256dh ||
-        !auth
-      ) {
-        return;
-      }
-
-      const { error } =
-        await supabase
-          .from("push_subscriptions")
-          .upsert(
-            {
-              user_id: user.id,
-              endpoint,
-              p256dh,
-              auth,
-              updated_at:
-                new Date().toISOString(),
-            },
-            {
-              onConflict: "endpoint",
-            }
-          );
-
-      if (error) {
-        console.error(
-          "Push subscription save error:",
-          error
-        );
-
-        setNotificationStatus(
-          "Notification subscription save nahi hui."
-        );
-
-        return;
-      }
-
-      setNotificationStatus(
-        "Notifications enabled ✓"
-      );
-    } catch (error) {
-      console.error(
-        "Push notification error:",
-        error
-      );
-    }
+    await requestInitialNotificationAccess();
+    await saveCurrentPushSubscription();
   }
 
   // ============================================================
@@ -754,6 +837,11 @@ export default function Home() {
         insertedPayment as PaymentRequest
       );
 
+      localStorage.setItem(
+        "last_payment_status",
+        "pending"
+      );
+
       setPaymentSubmitted(true);
       setApprovalWaiting(true);
       setPaymentApproved(false);
@@ -800,6 +888,10 @@ export default function Home() {
 
     localStorage.removeItem(
       "pending_plan_name"
+    );
+
+    localStorage.removeItem(
+      "last_payment_status"
     );
 
     setUserLoggedIn(false);
@@ -1047,8 +1139,7 @@ export default function Home() {
           NOTIFICATION STATUS
       ====================================================== */}
 
-      {userLoggedIn &&
-        notificationStatus && (
+      {notificationStatus && (
           <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border border-white/10 bg-[#151515] px-5 py-4 shadow-2xl">
 
             <div className="flex items-center gap-3">
