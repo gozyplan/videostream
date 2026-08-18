@@ -10,6 +10,7 @@ type Plan = {
   price: number;
   description?: string | null;
   is_active: boolean;
+  source?: string | null;
 };
 
 type Video = {
@@ -92,21 +93,22 @@ export default function Home() {
     };
   }, []);
 
-  // Ask for notification access as soon as the site opens.
-  // The browser may require a user gesture depending on its policy.
+  // ============================================================
+  // NOTIFICATION ACCESS
+  // ============================================================
+
   useEffect(() => {
     requestInitialNotificationAccess();
   }, []);
 
-  // Once the user is logged in, connect the browser push subscription
-  // to that Supabase user so payment notifications can be targeted.
   useEffect(() => {
     if (!userLoggedIn) return;
+
     saveCurrentPushSubscription();
   }, [userLoggedIn]);
 
   // ============================================================
-  // LOAD PLANS
+  // LOAD GOZY PLANS ONLY
   // ============================================================
 
   async function loadPlans() {
@@ -116,13 +118,14 @@ export default function Home() {
     const { data, error } = await supabase
       .from("plans")
       .select("*")
+      .eq("source", "gozy")
       .eq("is_active", true)
       .order("duration_days", {
         ascending: true,
       });
 
     if (error) {
-      console.error("Plans error:", error);
+      console.error("Gozy plans error:", error);
       setPlansError(error.message);
       setLoadingPlans(false);
       return;
@@ -250,7 +253,8 @@ export default function Home() {
 
     const plan = plans.find(
       (item) =>
-        String(item.id) === String(openPlanId)
+        String(item.id) ===
+        String(openPlanId)
     );
 
     if (!plan) {
@@ -298,17 +302,18 @@ export default function Home() {
     setCheckingPayment(true);
 
     try {
-      const { data, error } = await supabase
-        .from("payment_requests")
-        .select(
-          "id, plan_id, status, utr, created_at"
-        )
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } =
+        await supabase
+          .from("payment_requests")
+          .select(
+            "id, plan_id, status, utr, created_at"
+          )
+          .eq("user_id", userId)
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle();
 
       if (error) {
         console.error(
@@ -325,14 +330,18 @@ export default function Home() {
       const payment =
         data as PaymentRequest;
 
-      const previousStatus = localStorage.getItem(
-        "last_payment_status"
-      );
+      const previousStatus =
+        localStorage.getItem(
+          "last_payment_status"
+        );
 
       setSubmittedPayment(payment);
 
+      // APPROVED NOTIFICATION
+
       if (
-        payment.status === "approved" &&
+        payment.status ===
+          "approved" &&
         previousStatus === "pending"
       ) {
         showBrowserNotification(
@@ -342,8 +351,11 @@ export default function Home() {
         );
       }
 
+      // REJECTED NOTIFICATION
+
       if (
-        payment.status === "rejected" &&
+        payment.status ===
+          "rejected" &&
         previousStatus === "pending"
       ) {
         showBrowserNotification(
@@ -353,27 +365,39 @@ export default function Home() {
         );
       }
 
-      if (payment.status !== previousStatus) {
+      if (
+        payment.status !==
+        previousStatus
+      ) {
         localStorage.setItem(
           "last_payment_status",
           payment.status
         );
       }
 
-      if (payment.status === "pending") {
+      if (
+        payment.status ===
+        "pending"
+      ) {
         setPaymentSubmitted(true);
         setApprovalWaiting(true);
         setPaymentApproved(false);
       }
 
-      if (payment.status === "approved") {
+      if (
+        payment.status ===
+        "approved"
+      ) {
         setPaymentSubmitted(true);
         setApprovalWaiting(false);
         setPaymentApproved(true);
         setHasActiveSubscription(true);
       }
 
-      if (payment.status === "rejected") {
+      if (
+        payment.status ===
+        "rejected"
+      ) {
         setPaymentSubmitted(false);
         setApprovalWaiting(false);
         setPaymentApproved(false);
@@ -397,14 +421,19 @@ export default function Home() {
     async function startChecking() {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) return;
 
-      await checkLatestPayment(user.id);
+      await checkLatestPayment(
+        user.id
+      );
 
       interval = setInterval(() => {
-        checkLatestPayment(user.id);
+        checkLatestPayment(
+          user.id
+        );
       }, 5000);
     }
 
@@ -418,7 +447,7 @@ export default function Home() {
   }, [userLoggedIn]);
 
   // ============================================================
-  // BROWSER NOTIFICATIONS
+  // BROWSER NOTIFICATION
   // ============================================================
 
   function showBrowserNotification(
@@ -428,9 +457,11 @@ export default function Home() {
   ) {
     try {
       if (
-        typeof window === "undefined" ||
+        typeof window ===
+          "undefined" ||
         !("Notification" in window) ||
-        Notification.permission !== "granted"
+        Notification.permission !==
+          "granted"
       ) {
         return;
       }
@@ -441,35 +472,63 @@ export default function Home() {
         icon: "/icon-192.png",
       });
     } catch (error) {
-      console.error("Browser notification error:", error);
+      console.error(
+        "Browser notification error:",
+        error
+      );
     }
   }
+
+  // ============================================================
+  // INITIAL NOTIFICATION ACCESS
+  // ============================================================
 
   async function requestInitialNotificationAccess() {
     try {
       if (
-        typeof window === "undefined" ||
+        typeof window ===
+          "undefined" ||
         !("Notification" in window) ||
-        !("serviceWorker" in navigator) ||
+        !("serviceWorker" in
+          navigator) ||
         !("PushManager" in window)
       ) {
         return;
       }
 
-      await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.register(
+        "/sw.js"
+      );
 
-      if (Notification.permission === "default") {
-        const permission = await Notification.requestPermission();
+      if (
+        Notification.permission ===
+        "default"
+      ) {
+        const permission =
+          await Notification.requestPermission();
 
-        if (permission === "granted") {
-          setNotificationStatus("Notifications enabled ✓");
-        } else if (permission === "denied") {
+        if (
+          permission ===
+          "granted"
+        ) {
+          setNotificationStatus(
+            "Notifications enabled ✓"
+          );
+        } else if (
+          permission ===
+          "denied"
+        ) {
           setNotificationStatus(
             "Notifications blocked. Browser settings se allow kar sakte hain."
           );
         }
-      } else if (Notification.permission === "granted") {
-        setNotificationStatus("Notifications enabled ✓");
+      } else if (
+        Notification.permission ===
+        "granted"
+      ) {
+        setNotificationStatus(
+          "Notifications enabled ✓"
+        );
       }
     } catch (error) {
       console.error(
@@ -479,19 +538,26 @@ export default function Home() {
     }
   }
 
+  // ============================================================
+  // SAVE PUSH SUBSCRIPTION
+  // ============================================================
+
   async function saveCurrentPushSubscription() {
     try {
       if (
-        typeof window === "undefined" ||
+        typeof window ===
+          "undefined" ||
         !("Notification" in window) ||
-        !("serviceWorker" in navigator) ||
+        !("serviceWorker" in
+          navigator) ||
         !("PushManager" in window)
       ) {
         return;
       }
 
       const vapidPublicKey =
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        process.env
+          .NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
       if (!vapidPublicKey) {
         console.error(
@@ -502,27 +568,40 @@ export default function Home() {
 
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
-      if (!user || Notification.permission !== "granted") {
+      if (
+        !user ||
+        Notification.permission !==
+          "granted"
+      ) {
         return;
       }
 
-      await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.register(
+        "/sw.js"
+      );
 
       const readyRegistration =
-        await navigator.serviceWorker.ready;
+        await navigator.serviceWorker
+          .ready;
 
       let pushSubscription =
         await readyRegistration.pushManager.getSubscription();
 
       if (!pushSubscription) {
         pushSubscription =
-          await readyRegistration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey:
-              urlBase64ToUint8Array(vapidPublicKey),
-          });
+          await readyRegistration.pushManager.subscribe(
+            {
+              userVisibleOnly:
+                true,
+              applicationServerKey:
+                urlBase64ToUint8Array(
+                  vapidPublicKey
+                ),
+            }
+          );
       }
 
       const subscriptionJSON =
@@ -532,29 +611,40 @@ export default function Home() {
         subscriptionJSON.endpoint;
 
       const p256dh =
-        subscriptionJSON.keys?.p256dh;
+        subscriptionJSON.keys
+          ?.p256dh;
 
       const auth =
-        subscriptionJSON.keys?.auth;
+        subscriptionJSON.keys
+          ?.auth;
 
-      if (!endpoint || !p256dh || !auth) {
+      if (
+        !endpoint ||
+        !p256dh ||
+        !auth
+      ) {
         return;
       }
 
-      const { error } = await supabase
-        .from("push_subscriptions")
-        .upsert(
-          {
-            user_id: user.id,
-            endpoint,
-            p256dh,
-            auth,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "endpoint",
-          }
-        );
+      const { error } =
+        await supabase
+          .from(
+            "push_subscriptions"
+          )
+          .upsert(
+            {
+              user_id: user.id,
+              endpoint,
+              p256dh,
+              auth,
+              updated_at:
+                new Date().toISOString(),
+            },
+            {
+              onConflict:
+                "endpoint",
+            }
+          );
 
       if (error) {
         console.error(
@@ -564,7 +654,9 @@ export default function Home() {
         return;
       }
 
-      setNotificationStatus("Notifications enabled ✓");
+      setNotificationStatus(
+        "Notifications enabled ✓"
+      );
     } catch (error) {
       console.error(
         "Push subscription error:",
@@ -574,7 +666,7 @@ export default function Home() {
   }
 
   // ============================================================
-  // PUSH NOTIFICATIONS
+  // BASE64 → UINT8ARRAY
   // ============================================================
 
   function urlBase64ToUint8Array(
@@ -583,7 +675,8 @@ export default function Home() {
     const padding =
       "=".repeat(
         (4 -
-          (base64String.length % 4)) %
+          (base64String.length %
+            4)) %
           4
       );
 
@@ -602,6 +695,10 @@ export default function Home() {
       )
     );
   }
+
+  // ============================================================
+  // ENABLE PUSH
+  // ============================================================
 
   async function enablePushNotifications() {
     await requestInitialNotificationAccess();
@@ -660,7 +757,7 @@ export default function Home() {
   }
 
   // ============================================================
-  // PAYMENT REQUEST
+  // SUBMIT PAYMENT REQUEST
   // ============================================================
 
   async function submitPaymentRequest() {
@@ -686,14 +783,18 @@ export default function Home() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
         setPaymentError(
           "Please login or create an account first."
         );
 
-        setSubmittingPayment(false);
+        setSubmittingPayment(
+          false
+        );
+
         return;
       }
 
@@ -702,31 +803,37 @@ export default function Home() {
 
       const {
         data: activeSubscription,
-      } = await supabase
-        .from("subscriptions")
-        .select("id")
-        .eq(
-          "user_id",
-          user.id
-        )
-        .eq(
-          "status",
-          "active"
-        )
-        .gt(
-          "expires_at",
-          now
-        )
-        .limit(1)
-        .maybeSingle();
+      } =
+        await supabase
+          .from("subscriptions")
+          .select("id")
+          .eq(
+            "user_id",
+            user.id
+          )
+          .eq(
+            "status",
+            "active"
+          )
+          .gt(
+            "expires_at",
+            now
+          )
+          .limit(1)
+          .maybeSingle();
 
       if (activeSubscription) {
         setPaymentError(
           "Your premium plan is already active."
         );
 
-        setHasActiveSubscription(true);
-        setSubmittingPayment(false);
+        setHasActiveSubscription(
+          true
+        );
+
+        setSubmittingPayment(
+          false
+        );
 
         return;
       }
@@ -737,27 +844,31 @@ export default function Home() {
 
       const {
         data: existingPayment,
-      } = await supabase
-        .from("payment_requests")
-        .select(
-          "id, status, utr"
-        )
-        .eq(
-          "user_id",
-          user.id
-        )
-        .eq(
-          "utr",
-          utr.trim()
-        )
-        .maybeSingle();
+      } =
+        await supabase
+          .from("payment_requests")
+          .select(
+            "id, status, utr"
+          )
+          .eq(
+            "user_id",
+            user.id
+          )
+          .eq(
+            "utr",
+            utr.trim()
+          )
+          .maybeSingle();
 
       if (existingPayment) {
         setPaymentError(
           "This UTR has already been submitted."
         );
 
-        setSubmittingPayment(false);
+        setSubmittingPayment(
+          false
+        );
+
         return;
       }
 
@@ -767,35 +878,44 @@ export default function Home() {
 
       const {
         data: pendingPayment,
-      } = await supabase
-        .from("payment_requests")
-        .select(
-          "id, status, utr"
-        )
-        .eq(
-          "user_id",
-          user.id
-        )
-        .eq(
-          "status",
-          "pending"
-        )
-        .limit(1)
-        .maybeSingle();
+      } =
+        await supabase
+          .from("payment_requests")
+          .select(
+            "id, status, utr"
+          )
+          .eq(
+            "user_id",
+            user.id
+          )
+          .eq(
+            "status",
+            "pending"
+          )
+          .limit(1)
+          .maybeSingle();
 
       if (pendingPayment) {
         setPaymentError(
           "Your previous payment is still waiting for admin verification."
         );
 
-        setPaymentSubmitted(true);
-        setApprovalWaiting(true);
+        setPaymentSubmitted(
+          true
+        );
+
+        setApprovalWaiting(
+          true
+        );
 
         setSubmittedPayment(
           pendingPayment as PaymentRequest
         );
 
-        setSubmittingPayment(false);
+        setSubmittingPayment(
+          false
+        );
+
         return;
       }
 
@@ -806,18 +926,23 @@ export default function Home() {
       const {
         data: insertedPayment,
         error,
-      } = await supabase
-        .from("payment_requests")
-        .insert({
-          user_id: user.id,
-          plan_id: selectedPlan.id,
-          utr: utr.trim(),
-          status: "pending",
-        })
-        .select(
-          "id, plan_id, status, utr, created_at"
-        )
-        .single();
+      } =
+        await supabase
+          .from("payment_requests")
+          .insert({
+            user_id:
+              user.id,
+            plan_id:
+              selectedPlan.id,
+            utr:
+              utr.trim(),
+            status:
+              "pending",
+          })
+          .select(
+            "id, plan_id, status, utr, created_at"
+          )
+          .single();
 
       if (error) {
         console.error(
@@ -829,7 +954,10 @@ export default function Home() {
           error.message
         );
 
-        setSubmittingPayment(false);
+        setSubmittingPayment(
+          false
+        );
+
         return;
       }
 
@@ -842,12 +970,23 @@ export default function Home() {
         "pending"
       );
 
-      setPaymentSubmitted(true);
-      setApprovalWaiting(true);
-      setPaymentApproved(false);
+      setPaymentSubmitted(
+        true
+      );
+
+      setApprovalWaiting(
+        true
+      );
+
+      setPaymentApproved(
+        false
+      );
 
       setUtr("");
-      setSubmittingPayment(false);
+
+      setSubmittingPayment(
+        false
+      );
 
       await enablePushNotifications();
     } catch (error: any) {
@@ -861,7 +1000,9 @@ export default function Home() {
           "Payment request submit nahi ho paya."
       );
 
-      setSubmittingPayment(false);
+      setSubmittingPayment(
+        false
+      );
     }
   }
 
@@ -895,7 +1036,10 @@ export default function Home() {
     );
 
     setUserLoggedIn(false);
-    setHasActiveSubscription(false);
+    setHasActiveSubscription(
+      false
+    );
+
     setPaymentSubmitted(false);
     setApprovalWaiting(false);
     setPaymentApproved(false);
@@ -955,6 +1099,7 @@ export default function Home() {
             </div>
 
             <div>
+
               <div className="text-lg font-bold">
                 VideoStream
               </div>
@@ -962,6 +1107,7 @@ export default function Home() {
               <div className="text-[10px] uppercase tracking-[0.25em] text-white/35">
                 Premium
               </div>
+
             </div>
 
           </div>
@@ -1046,7 +1192,9 @@ export default function Home() {
 
             <button
               onClick={() =>
-                setMenuOpen(!menuOpen)
+                setMenuOpen(
+                  !menuOpen
+                )
               }
               className="rounded-lg border border-white/10 px-3 py-2 md:hidden"
             >
@@ -1123,7 +1271,7 @@ export default function Home() {
               )}
 
               {!userLoggedIn && (
-                <a href="/auth/login">
+                <a href="/auth/register">
                   Create Account
                 </a>
               )}
@@ -1140,28 +1288,30 @@ export default function Home() {
       ====================================================== */}
 
       {notificationStatus && (
-          <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border border-white/10 bg-[#151515] px-5 py-4 shadow-2xl">
+        <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border border-white/10 bg-[#151515] px-5 py-4 shadow-2xl">
 
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
 
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
-                🔔
-              </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
+              🔔
+            </div>
 
-              <div>
-                <p className="font-semibold">
-                  Notifications
-                </p>
+            <div>
 
-                <p className="mt-1 text-xs text-white/50">
-                  {notificationStatus}
-                </p>
-              </div>
+              <p className="font-semibold">
+                Notifications
+              </p>
+
+              <p className="mt-1 text-xs text-white/50">
+                {notificationStatus}
+              </p>
 
             </div>
 
           </div>
-        )}
+
+        </div>
+      )}
 
       {/* ======================================================
           HERO
@@ -1179,16 +1329,23 @@ export default function Home() {
           <div className="max-w-4xl">
 
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-white/70">
+
               <span className="h-2 w-2 rounded-full bg-green-400" />
+
               Premium video streaming
+
             </div>
 
             <h1 className="text-5xl font-black leading-[0.95] tracking-[-0.04em] sm:text-6xl lg:text-8xl">
+
               Watch more.
+
               <br />
+
               <span className="text-white/35">
                 Experience more.
               </span>
+
             </h1>
 
             <p className="mt-7 max-w-2xl text-base leading-7 text-white/50 sm:text-lg">
@@ -1292,17 +1449,24 @@ export default function Home() {
             {Array.from({
               length: 8,
             }).map((_, index) => (
+
               <div
                 key={index}
                 className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
               >
+
                 <div className="aspect-video animate-pulse bg-white/10" />
 
                 <div className="space-y-3 p-5">
+
                   <div className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
+
                   <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
+
                 </div>
+
               </div>
+
             ))}
 
           </div>
@@ -1317,105 +1481,112 @@ export default function Home() {
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
 
-            {videos.slice(0, 8).map(
-              (video, index) => (
+            {videos
+              .slice(0, 8)
+              .map(
+                (video, index) => (
 
-                <div
-                  key={video.id}
-                  className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
-                >
+                  <div
+                    key={video.id}
+                    className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
+                  >
 
-                  <div className="relative aspect-video overflow-hidden bg-black">
+                    <div className="relative aspect-video overflow-hidden bg-black">
 
-                    <img
-                      src={video.thumbnail_url}
-                      alt={video.title}
-                      className={`h-full w-full object-cover transition duration-500 ${
-                        hasActiveSubscription
-                          ? "group-hover:scale-105"
-                          : "scale-105 blur-[5px] brightness-[0.55]"
-                      }`}
-                    />
+                      <img
+                        src={
+                          video.thumbnail_url
+                        }
+                        alt={
+                          video.title
+                        }
+                        className={`h-full w-full object-cover transition duration-500 ${
+                          hasActiveSubscription
+                            ? "group-hover:scale-105"
+                            : "scale-105 blur-[5px] brightness-[0.55]"
+                        }`}
+                      />
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
 
-                    <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/70 px-3 py-1 text-[10px] font-bold uppercase">
-                      {index === 0
-                        ? "Featured"
-                        : "Premium"}
+                      <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/70 px-3 py-1 text-[10px] font-bold uppercase">
+                        {index === 0
+                          ? "Featured"
+                          : "Premium"}
+                      </div>
+
+                      {video.duration >
+                        0 && (
+                        <div className="absolute bottom-3 right-3 rounded-md bg-black/80 px-2 py-1 text-xs">
+                          {formatDuration(
+                            video.duration
+                          )}
+                        </div>
+                      )}
+
+                      <div className="absolute inset-0 flex items-center justify-center">
+
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-2xl">
+                          {hasActiveSubscription
+                            ? "▶"
+                            : "🔒"}
+                        </div>
+
+                      </div>
+
+                      {!hasActiveSubscription && (
+                        <div className="absolute bottom-3 left-3 rounded-full bg-black/70 px-3 py-1 text-[10px] font-semibold backdrop-blur">
+                          Premium access required
+                        </div>
+                      )}
+
                     </div>
 
-                    {video.duration > 0 && (
-                      <div className="absolute bottom-3 right-3 rounded-md bg-black/80 px-2 py-1 text-xs">
-                        {formatDuration(
-                          video.duration
-                        )}
-                      </div>
-                    )}
+                    <div className="p-5">
 
-                    <div className="absolute inset-0 flex items-center justify-center">
+                      <h3 className="line-clamp-1 font-bold">
+                        {video.title}
+                      </h3>
 
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-2xl">
-                        {hasActiveSubscription
-                          ? "▶"
-                          : "🔒"}
-                      </div>
+                      <p className="mt-2 text-xs leading-5 text-white/40">
+                        Premium video • Full access required
+                      </p>
+
+                      {hasActiveSubscription ? (
+
+                        <a
+                          href="/premium"
+                          className="mt-5 block w-full rounded-full bg-white py-3 text-center text-sm font-bold text-black"
+                        >
+                          Watch Now
+                        </a>
+
+                      ) : (
+
+                        <button
+                          onClick={() => {
+                            const firstPlan =
+                              plans[0];
+
+                            if (firstPlan) {
+                              handleBuyPlan(
+                                firstPlan
+                              );
+                            }
+                          }}
+                          className="mt-5 block w-full rounded-full border border-white/15 bg-white/[0.04] py-3 text-center text-sm font-bold"
+                        >
+                          Unlock Video
+                        </button>
+
+                      )}
 
                     </div>
-
-                    {!hasActiveSubscription && (
-                      <div className="absolute bottom-3 left-3 rounded-full bg-black/70 px-3 py-1 text-[10px] font-semibold backdrop-blur">
-                        Premium access required
-                      </div>
-                    )}
 
                   </div>
 
-                  <div className="p-5">
-
-                    <h3 className="line-clamp-1 font-bold">
-                      {video.title}
-                    </h3>
-
-                    <p className="mt-2 text-xs leading-5 text-white/40">
-                      Premium video • Full access required
-                    </p>
-
-                    {hasActiveSubscription ? (
-
-                      <a
-                        href="/premium"
-                        className="mt-5 block w-full rounded-full bg-white py-3 text-center text-sm font-bold text-black"
-                      >
-                        Watch Now
-                      </a>
-
-                    ) : (
-
-                      <button
-                        onClick={() => {
-                          const firstPlan =
-                            plans[0];
-
-                          if (firstPlan) {
-                            handleBuyPlan(
-                              firstPlan
-                            );
-                          }
-                        }}
-                        className="mt-5 block w-full rounded-full border border-white/15 bg-white/[0.04] py-3 text-center text-sm font-bold"
-                      >
-                        Unlock Video
-                      </button>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-              )
-            )}
+                )
+              )}
 
           </div>
 
@@ -1452,14 +1623,46 @@ export default function Home() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
 
           {[
-            ["🚫", "No Ads", "Enjoy premium content without distracting advertisements."],
-            ["▶", "Full Watch", "Premium members get complete access to available videos."],
-            ["⚡", "Fast Streaming", "Smooth playback powered by global video delivery."],
-            ["HD", "HD Quality", "Enjoy supported videos in high-quality streaming."],
-            ["🔒", "Secure Access", "Premium access is connected to your account."],
-            ["♾", "Large Library", "Access the growing premium video collection."],
-            ["📱", "Mobile Friendly", "Enjoy streaming on phones, tablets and desktop."],
-            ["✨", "Exclusive Content", "Premium-only content for active subscribers."],
+            [
+              "🚫",
+              "No Ads",
+              "Enjoy premium content without distracting advertisements.",
+            ],
+            [
+              "▶",
+              "Full Watch",
+              "Premium members get complete access to available videos.",
+            ],
+            [
+              "⚡",
+              "Fast Streaming",
+              "Smooth playback powered by global video delivery.",
+            ],
+            [
+              "HD",
+              "HD Quality",
+              "Enjoy supported videos in high-quality streaming.",
+            ],
+            [
+              "🔒",
+              "Secure Access",
+              "Premium access is connected to your account.",
+            ],
+            [
+              "♾",
+              "Large Library",
+              "Access the growing premium video collection.",
+            ],
+            [
+              "📱",
+              "Mobile Friendly",
+              "Enjoy streaming on phones, tablets and desktop.",
+            ],
+            [
+              "✨",
+              "Exclusive Content",
+              "Premium-only content for active subscribers.",
+            ],
           ].map(
             ([icon, title, text]) => (
 
@@ -1490,7 +1693,7 @@ export default function Home() {
       </section>
 
       {/* ======================================================
-          PLANS
+          GOZY PLANS
       ====================================================== */}
 
       <section
@@ -1542,68 +1745,80 @@ export default function Home() {
 
               <div className="grid gap-5 md:grid-cols-3">
 
-                {plans.slice(0, 3).map(
-                  (plan, index) => (
+                {plans
+                  .slice(0, 3)
+                  .map(
+                    (plan, index) => (
 
-                    <div
-                      key={plan.id}
-                      className={`relative rounded-3xl border p-7 ${
-                        index === 1
-                          ? "border-white/40 bg-white/[0.08]"
-                          : "border-white/10 bg-white/[0.03]"
-                      }`}
-                    >
-
-                      {index === 1 && (
-                        <div className="absolute right-5 top-5 rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase text-black">
-                          Most Popular
-                        </div>
-                      )}
-
-                      <p className="text-sm text-white/50">
-                        {plan.name}
-                      </p>
-
-                      <div className="mt-5 text-5xl font-black">
-                        ₹
-                        {Number(
-                          plan.price
-                        ).toFixed(0)}
-                      </div>
-
-                      <p className="mt-4 min-h-12 text-sm leading-6 text-white/45">
-                        Premium access for{" "}
-                        {plan.duration_days} days.
-                      </p>
-
-                      <button
-                        onClick={() =>
-                          handleBuyPlan(
-                            plan
-                          )
-                        }
-                        className="mt-7 w-full rounded-full bg-white py-3.5 text-sm font-bold text-black"
+                      <div
+                        key={plan.id}
+                        className={`relative rounded-3xl border p-7 ${
+                          index === 1
+                            ? "border-white/40 bg-white/[0.08]"
+                            : "border-white/10 bg-white/[0.03]"
+                        }`}
                       >
-                        {hasActiveSubscription
-                          ? "View Premium"
-                          : "Buy Plan"}
-                      </button>
 
-                      <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-sm text-white/60">
-                        <p>✓ No Ads</p>
-                        <p>✓ Full Watch</p>
-                        <p>✓ HD Streaming</p>
-                        <p>✓ Secure Premium Access</p>
-                        <p>
-                          ✓ Active for{" "}
-                          {plan.duration_days} days
+                        {index === 1 && (
+                          <div className="absolute right-5 top-5 rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase text-black">
+                            Most Popular
+                          </div>
+                        )}
+
+                        <p className="text-sm text-white/50">
+                          {plan.name}
                         </p>
+
+                        <div className="mt-5 text-5xl font-black">
+                          ₹
+                          {Number(
+                            plan.price
+                          ).toFixed(0)}
+                        </div>
+
+                        <p className="mt-4 min-h-12 text-sm leading-6 text-white/45">
+                          Premium access for{" "}
+                          {plan.duration_days} days.
+                        </p>
+
+                        <button
+                          onClick={() =>
+                            handleBuyPlan(
+                              plan
+                            )
+                          }
+                          className="mt-7 w-full rounded-full bg-white py-3.5 text-sm font-bold text-black"
+                        >
+                          {hasActiveSubscription
+                            ? "View Premium"
+                            : "Buy Plan"}
+                        </button>
+
+                        <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-sm text-white/60">
+
+                          <p>✓ No Ads</p>
+
+                          <p>✓ Full Watch</p>
+
+                          <p>✓ HD Streaming</p>
+
+                          <p>
+                            ✓ Secure Premium Access
+                          </p>
+
+                          <p>
+                            ✓ Active for{" "}
+                            {
+                              plan.duration_days
+                            } days
+                          </p>
+
+                        </div>
+
                       </div>
 
-                    </div>
-
-                  )
-                )}
+                    )
+                  )}
 
               </div>
 
@@ -1612,9 +1827,11 @@ export default function Home() {
           {!loadingPlans &&
             !plansError &&
             plans.length === 0 && (
+
               <div className="py-12 text-center text-white/50">
                 अभी कोई active plan उपलब्ध नहीं है।
               </div>
+
             )}
 
         </div>
@@ -1626,6 +1843,7 @@ export default function Home() {
       ====================================================== */}
 
       {selectedPlan && (
+
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
 
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#111111] p-6 shadow-2xl">
@@ -1814,8 +2032,7 @@ export default function Home() {
                     Pay exactly ₹
                     {Number(
                       selectedPlan.price
-                    ).toFixed(0)}
-                    {" "}
+                    ).toFixed(0)}{" "}
                     and keep your UTR.
                   </p>
 
@@ -1841,15 +2058,19 @@ export default function Home() {
                 </div>
 
                 {paymentError && (
+
                   <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
                     {paymentError}
                   </div>
+
                 )}
 
                 {paymentMessage && (
+
                   <div className="mt-4 rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-300">
                     {paymentMessage}
                   </div>
+
                 )}
 
                 <button
@@ -1877,6 +2098,7 @@ export default function Home() {
           </div>
 
         </div>
+
       )}
 
       {/* ======================================================

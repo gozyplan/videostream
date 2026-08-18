@@ -1,28 +1,113 @@
 "use client";
 
-import { FormEvent, Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import {
+  FormEvent,
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 function RegisterForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const planId = searchParams.get("plan");
+
+  const isHDLink = searchParams.get("hdlink") === "1";
+  const urlPlanId = searchParams.get("plan");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [planId, setPlanId] = useState<string | null>(
+    null
+  );
 
   const [loading, setLoading] = useState(false);
+  const [checkingUser, setCheckingUser] = useState(true);
+
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  async function handleRegister(e: FormEvent<HTMLFormElement>) {
+  // ============================================================
+  // RESTORE HDLINK PLAN
+  // ============================================================
+
+  useEffect(() => {
+    if (!isHDLink) {
+      setCheckingUser(false);
+      return;
+    }
+
+    const savedPlan =
+      urlPlanId ||
+      localStorage.getItem(
+        "hdlink_pending_plan_id"
+      );
+
+    if (savedPlan) {
+      setPlanId(savedPlan);
+
+      localStorage.setItem(
+        "hdlink_pending_plan_id",
+        savedPlan
+      );
+    }
+
+    setCheckingUser(false);
+  }, [isHDLink, urlPlanId]);
+
+  // ============================================================
+  // CHECK EXISTING SESSION
+  // ============================================================
+
+  useEffect(() => {
+    async function checkSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const savedPlan =
+          urlPlanId ||
+          localStorage.getItem(
+            "hdlink_pending_plan_id"
+          );
+
+        if (isHDLink && savedPlan) {
+          router.replace(
+            `/hdlink?plan=${encodeURIComponent(
+              savedPlan
+            )}`
+          );
+        } else {
+          router.replace("/premium");
+        }
+
+        return;
+      }
+
+      setCheckingUser(false);
+    }
+
+    checkSession();
+  }, [router, isHDLink, urlPlanId]);
+
+  // ============================================================
+  // CREATE ACCOUNT
+  // ============================================================
+
+  async function handleRegister(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
     setError("");
     setMessage("");
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim();
 
     if (!cleanEmail) {
       setError("Please enter your email.");
@@ -30,12 +115,14 @@ function RegisterForm() {
     }
 
     if (!password) {
-      setError("Please enter your password.");
+      setError("Please enter a password.");
       return;
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(
+        "Password must be at least 6 characters."
+      );
       return;
     }
 
@@ -47,304 +134,391 @@ function RegisterForm() {
     setLoading(true);
 
     try {
-      const selectedPlanId =
-        planId || localStorage.getItem("pending_plan_id");
+      // --------------------------------------------------------
+      // SAVE PLAN
+      // --------------------------------------------------------
 
-      if (selectedPlanId) {
+      let selectedPlanId =
+        urlPlanId ||
+        planId ||
+        localStorage.getItem(
+          "hdlink_pending_plan_id"
+        );
+
+      if (isHDLink && selectedPlanId) {
         localStorage.setItem(
-          "pending_plan_id",
+          "hdlink_pending_plan_id",
           selectedPlanId
         );
       }
 
-      const { data, error: signupError } =
-        await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-        });
+      // --------------------------------------------------------
+      // CREATE USER
+      // --------------------------------------------------------
 
-      if (signupError) {
-        console.error("Signup error:", signupError);
-        setError(signupError.message);
-        setLoading(false);
-        return;
-      }
+      const {
+        data,
+        error: registerError,
+      } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+      });
 
-      if (!data.user) {
+      if (registerError) {
+        console.error(
+          "HDLink register error:",
+          registerError
+        );
+
         setError(
-          "Account create nahi ho paya. Please try again."
+          registerError.message ||
+            "Account could not be created."
         );
-        setLoading(false);
+
         return;
       }
 
-      // Email verification enabled
-      if (!data.session) {
-        setMessage(
-          "Account create ho gaya! Please apni email verify karein, phir login karein."
-        );
-        setLoading(false);
-        return;
-      }
+      // --------------------------------------------------------
+      // IMPORTANT:
+      // If Supabase immediately returns a session,
+      // user can continue directly.
+      // --------------------------------------------------------
 
-      // Account created and logged in
-      setMessage("Account successfully create ho gaya.");
+      if (data.session?.user) {
+        if (isHDLink && selectedPlanId) {
+          router.replace(
+            `/hdlink?plan=${encodeURIComponent(
+              selectedPlanId
+            )}`
+          );
 
-      setTimeout(() => {
-        if (selectedPlanId) {
-          window.location.href = `/?plan=${selectedPlanId}`;
-        } else {
-          window.location.href = "/";
+          return;
         }
-      }, 700);
-    } catch (err: any) {
-      console.error("Register error:", err);
 
-      setError(
-        err?.message ||
-          "Account create nahi ho paya. Please try again."
+        router.replace("/premium");
+        return;
+      }
+
+      // --------------------------------------------------------
+      // EMAIL CONFIRMATION REQUIRED
+      // --------------------------------------------------------
+
+      setMessage(
+        "Account created successfully. Please check your email and confirm your account before logging in."
+      );
+    } catch (err) {
+      console.error(
+        "Register unexpected error:",
+        err
       );
 
+      setError(
+        "Something went wrong. Please try again."
+      );
+    } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-[#070707] text-white">
+  // ============================================================
+  // LOGIN
+  // ============================================================
 
-      {/* BACKGROUND */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-white/[0.05] blur-[120px]" />
+  function goToLogin() {
+    setError("");
 
-        <div className="absolute bottom-0 left-0 h-[400px] w-[400px] rounded-full bg-blue-500/[0.03] blur-[120px]" />
-      </div>
+    const selectedPlanId =
+      urlPlanId ||
+      planId ||
+      localStorage.getItem(
+        "hdlink_pending_plan_id"
+      );
 
-      {/* NAVBAR */}
-      <nav className="relative z-10 border-b border-white/10 bg-[#070707]/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
+    if (isHDLink && selectedPlanId) {
+      localStorage.setItem(
+        "hdlink_pending_plan_id",
+        selectedPlanId
+      );
 
-          <a
-            href="/"
-            className="flex items-center gap-3"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white font-black text-black">
-              V
-            </div>
+      window.location.href =
+        `/auth/login?hdlink=1&plan=${encodeURIComponent(
+          selectedPlanId
+        )}`;
 
-            <div>
-              <div className="text-lg font-bold">
-                VideoStream
-              </div>
+      return;
+    }
 
-              <div className="text-[10px] uppercase tracking-[0.25em] text-white/35">
-                Premium
-              </div>
-            </div>
-          </a>
+    window.location.href =
+      "/auth/login";
+  }
 
-          {/* LOGIN */}
-          <a
-            href={
-              planId
-                ? `/auth/login?plan=${planId}`
-                : "/auth/login"
-            }
-            className="rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold transition hover:bg-white/[0.05]"
-          >
-            Login
-          </a>
+  // ============================================================
+  // BACK
+  // ============================================================
 
+  function goBack() {
+    const selectedPlanId =
+      urlPlanId ||
+      planId ||
+      localStorage.getItem(
+        "hdlink_pending_plan_id"
+      );
+
+    if (isHDLink && selectedPlanId) {
+      window.location.href =
+        `/hdlink?plan=${encodeURIComponent(
+          selectedPlanId
+        )}`;
+
+      return;
+    }
+
+    window.location.href = "/hdlink";
+  }
+
+  // ============================================================
+  // LOADING
+  // ============================================================
+
+  if (checkingUser) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+            H
+          </div>
+
+          <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+
+          <p className="mt-4 text-sm text-white/40">
+            Loading...
+          </p>
         </div>
-      </nav>
+      </main>
+    );
+  }
 
-      {/* REGISTER */}
-      <section className="relative z-10 flex min-h-[calc(100vh-80px)] items-center justify-center px-5 py-12">
+  // ============================================================
+  // PAGE
+  // ============================================================
 
-        <div className="w-full max-w-md">
+  return (
+    <main className="min-h-screen bg-[#050505] px-5 py-10 text-white">
+      <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
+        <div className="w-full">
 
-          {/* HEADER */}
+          {/* LOGO */}
+
           <div className="mb-8 text-center">
+            <button
+              type="button"
+              onClick={goBack}
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl"
+            >
+              H
+            </button>
 
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black shadow-2xl">
-              V
+            <div className="mt-4 text-xl font-black">
+              HDLink
             </div>
 
-            <h1 className="mt-6 text-3xl font-black tracking-tight sm:text-4xl">
-              Create your account
-            </h1>
-
-            <p className="mt-3 text-sm leading-6 text-white/45">
-              Create an account to access premium videos.
-            </p>
-
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30">
+              Premium Streaming
+            </div>
           </div>
 
           {/* CARD */}
-          <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+
+          <div className="rounded-[30px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl sm:p-8">
+
+            <div>
+              <h1 className="text-3xl font-black tracking-tight">
+                Create your account
+              </h1>
+
+              <p className="mt-2 text-sm leading-6 text-white/40">
+                {isHDLink
+                  ? "Create an account to continue with your HDLink plan."
+                  : "Create your account to continue."}
+              </p>
+            </div>
+
+            {/* HDLINK SAVED MESSAGE */}
+
+            {isHDLink && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-black">
+                  ✓
+                </div>
+
+                <div>
+                  <div className="text-sm font-bold text-white/90">
+                    HDLink plan saved
+                  </div>
+
+                  <div className="mt-0.5 text-xs text-white/35">
+                    Your selected plan will continue after account creation.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* FORM */}
 
             <form
               onSubmit={handleRegister}
-              className="space-y-5"
+              className="mt-7"
             >
-
               {/* EMAIL */}
-              <div>
-                <label
-                  htmlFor="email"
-                  className="text-sm font-semibold text-white/80"
-                >
-                  Email / Gmail
-                </label>
 
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
-                  placeholder="you@gmail.com"
-                  autoComplete="email"
-                  disabled={loading}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
-                />
-              </div>
+              <label
+                htmlFor="register-email"
+                className="mb-2 block text-sm font-semibold text-white/70"
+              >
+                Email / Gmail
+              </label>
+
+              <input
+                id="register-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
+                placeholder="you@gmail.com"
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+              />
 
               {/* PASSWORD */}
-              <div>
-                <label
-                  htmlFor="password"
-                  className="text-sm font-semibold text-white/80"
-                >
-                  Password
-                </label>
 
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="Minimum 6 characters"
-                  autoComplete="new-password"
-                  disabled={loading}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
-                />
+              <label
+                htmlFor="register-password"
+                className="mb-2 mt-5 block text-sm font-semibold text-white/70"
+              >
+                Password
+              </label>
 
-                <p className="mt-2 text-xs text-white/30">
-                  Password kam se kam 6 characters ka hona chahiye.
-                </p>
-              </div>
+              <input
+                id="register-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
+                placeholder="Create a password"
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+              />
 
               {/* CONFIRM PASSWORD */}
-              <div>
-                <label
-                  htmlFor="confirmPassword"
-                  className="text-sm font-semibold text-white/80"
-                >
-                  Confirm Password
-                </label>
 
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) =>
-                    setConfirmPassword(e.target.value)
-                  }
-                  placeholder="Enter password again"
-                  autoComplete="new-password"
-                  disabled={loading}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/30 focus:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
-                />
-              </div>
+              <label
+                htmlFor="register-confirm-password"
+                className="mb-2 mt-5 block text-sm font-semibold text-white/70"
+              >
+                Confirm Password
+              </label>
+
+              <input
+                id="register-confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) =>
+                  setConfirmPassword(
+                    e.target.value
+                  )
+                }
+                placeholder="Repeat your password"
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+              />
 
               {/* ERROR */}
+
               {error && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-                  <p className="text-sm leading-6 text-red-300">
-                    {error}
-                  </p>
+                <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
+                  {error}
                 </div>
               )}
 
               {/* SUCCESS */}
+
               {message && (
-                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4">
-                  <p className="text-sm leading-6 text-green-300">
-                    {message}
-                  </p>
+                <div className="mt-5 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm leading-6 text-green-300">
+                  {message}
                 </div>
               )}
 
-              {/* REGISTER BUTTON */}
+              {/* CREATE ACCOUNT */}
+
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-full bg-white py-4 text-sm font-bold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-6 w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
                   ? "Creating Account..."
                   : "Create Account"}
               </button>
-
             </form>
 
             {/* LOGIN */}
+
             <div className="mt-7 border-t border-white/10 pt-6 text-center">
-
-              <p className="text-sm text-white/40">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/25">
                 Already have an account?
-              </p>
+              </div>
 
-              <a
-                href={
-                  planId
-                    ? `/auth/login?plan=${planId}`
-                    : "/auth/login"
-                }
-                className="mt-2 inline-block text-sm font-semibold text-white hover:underline"
+              <button
+                type="button"
+                onClick={goToLogin}
+                className="mt-3 text-sm font-black text-white transition hover:text-white/70"
               >
-                Login to your account →
-              </a>
-
+                Login →
+              </button>
             </div>
 
           </div>
 
-          {/* FOOTER */}
-          <div className="mt-7 text-center">
+          {/* BACK */}
 
-            <p className="text-xs leading-5 text-white/25">
-              By creating an account, you agree to our
-              Terms of Service and Privacy Policy.
-            </p>
-
-            <a
-              href="/"
-              className="mt-4 inline-block text-xs text-white/35 hover:text-white"
-            >
-              ← Back to VideoStream
-            </a>
-
-          </div>
+          <button
+            type="button"
+            onClick={goBack}
+            className="mx-auto mt-7 block text-xs font-semibold text-white/30 transition hover:text-white/70"
+          >
+            ← Back to HDLink
+          </button>
 
         </div>
-
-      </section>
-
+      </div>
     </main>
   );
 }
+
+// ============================================================
+// SUSPENSE
+// ============================================================
 
 export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#070707] text-white">
-          <div className="text-sm text-white/50">
-            Loading...
+        <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+              H
+            </div>
+
+            <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+
+            <p className="mt-4 text-sm text-white/40">
+              Loading...
+            </p>
           </div>
         </main>
       }
