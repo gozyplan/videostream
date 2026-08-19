@@ -13,7 +13,6 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const isHDLink = searchParams.get("hdlink") === "1";
   const urlPlanId = searchParams.get("plan");
 
   const [email, setEmail] = useState("");
@@ -32,32 +31,25 @@ function RegisterForm() {
   const [message, setMessage] = useState("");
 
   // ============================================================
-  // RESTORE HDLINK PLAN
+  // RESTORE GOZY PLAN
   // ============================================================
 
   useEffect(() => {
-    if (!isHDLink) {
-      setCheckingUser(false);
-      return;
-    }
-
     const savedPlan =
       urlPlanId ||
-      localStorage.getItem(
-        "hdlink_pending_plan_id"
-      );
+      localStorage.getItem("gozy_pending_plan_id");
 
     if (savedPlan) {
       setPlanId(savedPlan);
 
       localStorage.setItem(
-        "hdlink_pending_plan_id",
+        "gozy_pending_plan_id",
         savedPlan
       );
     }
 
     setCheckingUser(false);
-  }, [isHDLink, urlPlanId]);
+  }, [urlPlanId]);
 
   // ============================================================
   // CHECK EXISTING SESSION
@@ -73,12 +65,12 @@ function RegisterForm() {
         const savedPlan =
           urlPlanId ||
           localStorage.getItem(
-            "hdlink_pending_plan_id"
+            "gozy_pending_plan_id"
           );
 
-        if (isHDLink && savedPlan) {
+        if (savedPlan) {
           router.replace(
-            `/hdlink?plan=${encodeURIComponent(
+            `/premium?plan=${encodeURIComponent(
               savedPlan
             )}`
           );
@@ -93,7 +85,7 @@ function RegisterForm() {
     }
 
     checkSession();
-  }, [router, isHDLink, urlPlanId]);
+  }, [router, urlPlanId]);
 
   // ============================================================
   // CREATE ACCOUNT
@@ -135,19 +127,19 @@ function RegisterForm() {
 
     try {
       // --------------------------------------------------------
-      // SAVE PLAN
+      // SAVE SELECTED PLAN
       // --------------------------------------------------------
 
-      let selectedPlanId =
+      const selectedPlanId =
         urlPlanId ||
         planId ||
         localStorage.getItem(
-          "hdlink_pending_plan_id"
+          "gozy_pending_plan_id"
         );
 
-      if (isHDLink && selectedPlanId) {
+      if (selectedPlanId) {
         localStorage.setItem(
-          "hdlink_pending_plan_id",
+          "gozy_pending_plan_id",
           selectedPlanId
         );
       }
@@ -166,7 +158,7 @@ function RegisterForm() {
 
       if (registerError) {
         console.error(
-          "HDLink register error:",
+          "GOZY register error:",
           registerError
         );
 
@@ -179,28 +171,25 @@ function RegisterForm() {
       }
 
       // --------------------------------------------------------
-      // IMPORTANT:
-      // If Supabase immediately returns a session,
-      // user can continue directly.
+      // SESSION AVAILABLE
       // --------------------------------------------------------
 
       if (data.session?.user) {
-        if (isHDLink && selectedPlanId) {
+        if (selectedPlanId) {
           router.replace(
-            `/hdlink?plan=${encodeURIComponent(
+            `/premium?plan=${encodeURIComponent(
               selectedPlanId
             )}`
           );
-
-          return;
+        } else {
+          router.replace("/premium");
         }
 
-        router.replace("/premium");
         return;
       }
 
       // --------------------------------------------------------
-      // EMAIL CONFIRMATION REQUIRED
+      // EMAIL CONFIRMATION
       // --------------------------------------------------------
 
       setMessage(
@@ -231,17 +220,17 @@ function RegisterForm() {
       urlPlanId ||
       planId ||
       localStorage.getItem(
-        "hdlink_pending_plan_id"
+        "gozy_pending_plan_id"
       );
 
-    if (isHDLink && selectedPlanId) {
+    if (selectedPlanId) {
       localStorage.setItem(
-        "hdlink_pending_plan_id",
+        "gozy_pending_plan_id",
         selectedPlanId
       );
 
       window.location.href =
-        `/auth/login?hdlink=1&plan=${encodeURIComponent(
+        `/auth/login?plan=${encodeURIComponent(
           selectedPlanId
         )}`;
 
@@ -261,19 +250,19 @@ function RegisterForm() {
       urlPlanId ||
       planId ||
       localStorage.getItem(
-        "hdlink_pending_plan_id"
+        "gozy_pending_plan_id"
       );
 
-    if (isHDLink && selectedPlanId) {
+    if (selectedPlanId) {
       window.location.href =
-        `/hdlink?plan=${encodeURIComponent(
+        `/?plan=${encodeURIComponent(
           selectedPlanId
-        )}`;
+        )}#plans`;
 
       return;
     }
 
-    window.location.href = "/hdlink";
+    window.location.href = "/#plans";
   }
 
   // ============================================================
@@ -282,17 +271,19 @@ function RegisterForm() {
 
   if (checkingUser) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
         <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
-            H
+
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl">
+            G
           </div>
 
           <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
           <p className="mt-4 text-sm text-white/40">
-            Loading...
+            Loading GOZY...
           </p>
+
         </div>
       </main>
     );
@@ -303,72 +294,89 @@ function RegisterForm() {
   // ============================================================
 
   return (
-    <main className="min-h-screen bg-[#050505] px-5 py-10 text-white">
+    <main className="min-h-screen bg-[#080808] px-5 py-10 text-white">
+
       <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
+
         <div className="w-full">
 
-          {/* LOGO */}
+          {/* ==================================================
+              LOGO
+          ================================================== */}
 
           <div className="mb-8 text-center">
+
             <button
               type="button"
               onClick={goBack}
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl"
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl transition hover:scale-105"
             >
-              H
+              G
             </button>
 
-            <div className="mt-4 text-xl font-black">
-              HDLink
+            <div className="mt-4 text-xl font-black tracking-tight">
+              GOZY
             </div>
 
             <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30">
               Premium Streaming
             </div>
+
           </div>
 
-          {/* CARD */}
+          {/* ==================================================
+              CARD
+          ================================================== */}
 
           <div className="rounded-[30px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl sm:p-8">
 
             <div>
+
               <h1 className="text-3xl font-black tracking-tight">
                 Create your account
               </h1>
 
               <p className="mt-2 text-sm leading-6 text-white/40">
-                {isHDLink
-                  ? "Create an account to continue with your HDLink plan."
-                  : "Create your account to continue."}
+                Create your GOZY account to continue.
               </p>
+
             </div>
 
-            {/* HDLINK SAVED MESSAGE */}
+            {/* ==================================================
+                PLAN SAVED
+            ================================================== */}
 
-            {isHDLink && (
+            {planId && (
               <div className="mt-6 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-black">
                   ✓
                 </div>
 
                 <div>
+
                   <div className="text-sm font-bold text-white/90">
-                    HDLink plan saved
+                    GOZY plan saved
                   </div>
 
                   <div className="mt-0.5 text-xs text-white/35">
                     Your selected plan will continue after account creation.
                   </div>
+
                 </div>
+
               </div>
             )}
 
-            {/* FORM */}
+            {/* ==================================================
+                FORM
+            ================================================== */}
 
             <form
               onSubmit={handleRegister}
               className="mt-7"
             >
+
               {/* EMAIL */}
 
               <label
@@ -464,11 +472,15 @@ function RegisterForm() {
                   ? "Creating Account..."
                   : "Create Account"}
               </button>
+
             </form>
 
-            {/* LOGIN */}
+            {/* ==================================================
+                LOGIN
+            ================================================== */}
 
             <div className="mt-7 border-t border-white/10 pt-6 text-center">
+
               <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/25">
                 Already have an account?
               </div>
@@ -480,22 +492,27 @@ function RegisterForm() {
               >
                 Login →
               </button>
+
             </div>
 
           </div>
 
-          {/* BACK */}
+          {/* ==================================================
+              BACK
+          ================================================== */}
 
           <button
             type="button"
             onClick={goBack}
             className="mx-auto mt-7 block text-xs font-semibold text-white/30 transition hover:text-white/70"
           >
-            ← Back to HDLink
+            ← Back to GOZY
           </button>
 
         </div>
+
       </div>
+
     </main>
   );
 }
@@ -508,18 +525,22 @@ export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+        <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
+
           <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
-              H
+
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl">
+              G
             </div>
 
             <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
             <p className="mt-4 text-sm text-white/40">
-              Loading...
+              Loading GOZY...
             </p>
+
           </div>
+
         </main>
       }
     >

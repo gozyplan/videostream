@@ -6,9 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
-
 import { useRouter } from "next/navigation";
-
 import { supabase } from "@/lib/supabase";
 
 type Plan = {
@@ -51,15 +49,11 @@ export default function HDLinkPage() {
   const [utr, setUtr] = useState("");
 
   const [loading, setLoading] = useState(true);
-  const [loadingPlans, setLoadingPlans] =
-    useState(true);
+  const [loadingPlans, setLoadingPlans] = useState(true);
   const [loadingVideos, setLoadingVideos] =
     useState(true);
 
   const [submitting, setSubmitting] =
-    useState(false);
-
-  const [showPlans, setShowPlans] =
     useState(false);
 
   const [paymentSubmitted, setPaymentSubmitted] =
@@ -76,24 +70,17 @@ export default function HDLinkPage() {
   const [urlPlanHandled, setUrlPlanHandled] =
     useState(false);
 
-  // ============================================================
-  // READ URL PLAN WITHOUT useSearchParams
-  // This avoids Next.js production Suspense error.
-  // ============================================================
+  /* =========================================================
+     INITIAL
+  ========================================================= */
 
   useEffect(() => {
     const params = new URLSearchParams(
       window.location.search
     );
 
-    const plan = params.get("plan");
-
-    setUrlPlanId(plan);
+    setUrlPlanId(params.get("plan"));
   }, []);
-
-  // ============================================================
-  // INITIAL LOAD
-  // ============================================================
 
   useEffect(() => {
     loadEverything();
@@ -111,17 +98,14 @@ export default function HDLinkPage() {
     setLoading(false);
   }
 
-  // ============================================================
-  // LOAD PLANS
-  // ============================================================
+  /* =========================================================
+     PLANS
+  ========================================================= */
 
   async function loadPlans() {
     setLoadingPlans(true);
 
-    const {
-      data,
-      error: plansError,
-    } = await supabase
+    const { data, error } = await supabase
       .from("plans")
       .select(
         "id,name,duration_days,price,description"
@@ -132,10 +116,10 @@ export default function HDLinkPage() {
         ascending: true,
       });
 
-    if (plansError) {
+    if (error) {
       console.error(
         "HDLink plans error:",
-        plansError
+        error
       );
 
       setError(
@@ -150,9 +134,9 @@ export default function HDLinkPage() {
     setLoadingPlans(false);
   }
 
-  // ============================================================
-  // LOAD VIDEOS
-  // ============================================================
+  /* =========================================================
+     VIDEOS
+  ========================================================= */
 
   async function loadVideos() {
     setLoadingVideos(true);
@@ -202,9 +186,9 @@ export default function HDLinkPage() {
     }
   }
 
-  // ============================================================
-  // CHECK USER
-  // ============================================================
+  /* =========================================================
+     USER
+  ========================================================= */
 
   async function checkUser() {
     const {
@@ -220,41 +204,38 @@ export default function HDLinkPage() {
     }
   }
 
-  // ============================================================
-  // AUTH STATE
-  // ============================================================
+  /* =========================================================
+     AUTH STATE
+  ========================================================= */
 
   useEffect(() => {
     const {
-      data: {
-        subscription: authSubscription,
-      },
-    } =
-      supabase.auth.onAuthStateChange(
-        async (_event, session) => {
-          const currentUser =
-            session?.user ?? null;
+      data: { subscription: authListener },
+    } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        const currentUser =
+          session?.user ?? null;
 
-          setUser(currentUser);
+        setUser(currentUser);
 
-          if (currentUser) {
-            await loadSubscription(
-              currentUser.id
-            );
-          } else {
-            setSubscription(null);
-          }
+        if (currentUser) {
+          await loadSubscription(
+            currentUser.id
+          );
+        } else {
+          setSubscription(null);
         }
-      );
+      }
+    );
 
     return () => {
-      authSubscription.unsubscribe();
+      authListener.unsubscribe();
     };
   }, []);
 
-  // ============================================================
-  // LOAD ACTIVE SUBSCRIPTION
-  // ============================================================
+  /* =========================================================
+     SUBSCRIPTION
+  ========================================================= */
 
   async function loadSubscription(
     userId: string
@@ -262,42 +243,34 @@ export default function HDLinkPage() {
     const now =
       new Date().toISOString();
 
-    const {
-      data,
-      error: subscriptionError,
-    } = await supabase
-      .from("subscriptions")
-      .select(
-        "id,plan_id,status,expires_at"
-      )
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .gt("expires_at", now)
-      .order("expires_at", {
-        ascending: false,
-      })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } =
+      await supabase
+        .from("subscriptions")
+        .select(
+          "id,plan_id,status,expires_at"
+        )
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .gt("expires_at", now)
+        .order("expires_at", {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle();
 
-    if (subscriptionError) {
+    if (error) {
       console.error(
-        "Subscription error:",
-        subscriptionError
+        "HDLink subscription error:",
+        error
       );
 
       setSubscription(null);
-
       return null;
     }
 
     setSubscription(data);
-
     return data;
   }
-
-  // ============================================================
-  // PREMIUM CHECK
-  // ============================================================
 
   const hasPremium =
     !!subscription &&
@@ -306,9 +279,9 @@ export default function HDLinkPage() {
       subscription.expires_at
     ).getTime() > Date.now();
 
-  // ============================================================
-  // HANDLE PLAN FROM URL
-  // ============================================================
+  /* =========================================================
+     URL PLAN HANDLER
+  ========================================================= */
 
   useEffect(() => {
     if (
@@ -319,9 +292,7 @@ export default function HDLinkPage() {
       return;
     }
 
-    const planId = Number(
-      urlPlanId
-    );
+    const planId = Number(urlPlanId);
 
     if (!Number.isFinite(planId)) {
       setError(
@@ -329,13 +300,11 @@ export default function HDLinkPage() {
       );
 
       setUrlPlanHandled(true);
-
       return;
     }
 
     const matchedPlan = plans.find(
-      (plan) =>
-        plan.id === planId
+      (plan) => plan.id === planId
     );
 
     if (!matchedPlan) {
@@ -344,7 +313,6 @@ export default function HDLinkPage() {
       );
 
       setUrlPlanHandled(true);
-
       return;
     }
 
@@ -356,7 +324,7 @@ export default function HDLinkPage() {
       setUrlPlanHandled(true);
 
       router.replace(
-        "/premium"
+        "/hdlink/premium"
       );
 
       return;
@@ -371,18 +339,14 @@ export default function HDLinkPage() {
       setUrlPlanHandled(true);
 
       window.location.href =
-        `/auth/register?hdlink=1&plan=${encodeURIComponent(
+        `/hdlink/auth/register?plan=${encodeURIComponent(
           String(matchedPlan.id)
         )}`;
 
       return;
     }
 
-    setSelectedPlan(
-      matchedPlan
-    );
-
-    setShowPlans(false);
+    setSelectedPlan(matchedPlan);
     setError("");
     setUrlPlanHandled(true);
   }, [
@@ -394,9 +358,9 @@ export default function HDLinkPage() {
     router,
   ]);
 
-  // ============================================================
-  // RESTORE SAVED PLAN
-  // ============================================================
+  /* =========================================================
+     RESTORE PLAN
+  ========================================================= */
 
   useEffect(() => {
     if (
@@ -413,13 +377,9 @@ export default function HDLinkPage() {
         "hdlink_pending_plan_id"
       );
 
-    if (!savedPlanId) {
-      return;
-    }
+    if (!savedPlanId) return;
 
-    const planId = Number(
-      savedPlanId
-    );
+    const planId = Number(savedPlanId);
 
     if (!Number.isFinite(planId)) {
       localStorage.removeItem(
@@ -430,8 +390,7 @@ export default function HDLinkPage() {
     }
 
     const savedPlan = plans.find(
-      (plan) =>
-        plan.id === planId
+      (plan) => plan.id === planId
     );
 
     if (!savedPlan) {
@@ -452,16 +411,14 @@ export default function HDLinkPage() {
 
     if (!user) {
       window.location.href =
-        `/auth/register?hdlink=1&plan=${encodeURIComponent(
+        `/hdlink/auth/register?plan=${encodeURIComponent(
           String(savedPlan.id)
         )}`;
 
       return;
     }
 
-    setSelectedPlan(
-      savedPlan
-    );
+    setSelectedPlan(savedPlan);
   }, [
     plans,
     urlPlanId,
@@ -471,13 +428,11 @@ export default function HDLinkPage() {
     urlPlanHandled,
   ]);
 
-  // ============================================================
-  // SELECT PLAN
-  // ============================================================
+  /* =========================================================
+     SELECT PLAN
+  ========================================================= */
 
-  function selectPlan(
-    plan: Plan
-  ) {
+  function selectPlan(plan: Plan) {
     setError("");
     setUtr("");
     setPaymentSubmitted(false);
@@ -493,43 +448,70 @@ export default function HDLinkPage() {
     }
 
     setSelectedPlan(plan);
-    setShowPlans(false);
   }
 
-  // ============================================================
-  // OPEN PLANS
-  // ============================================================
+  /* =========================================================
+     LOGIN
+  ========================================================= */
 
-  function openPlans() {
-    setError("");
+  function goToLogin(
+    plan?: Plan | null
+  ) {
+    const targetPlan =
+      plan || selectedPlan;
 
-    if (plans.length === 0) {
-      setError(
-        "No plans are currently available."
+    if (targetPlan) {
+      localStorage.setItem(
+        "hdlink_pending_plan_id",
+        String(targetPlan.id)
       );
 
+      window.location.href =
+        `/hdlink/auth/login?plan=${encodeURIComponent(
+          String(targetPlan.id)
+        )}`;
+
       return;
     }
 
-    setShowPlans(true);
+    window.location.href =
+      "/hdlink/auth/login";
   }
 
-  // ============================================================
-  // CLOSE PLANS
-  // ============================================================
+  /* =========================================================
+     REGISTER
+  ========================================================= */
 
-  function closePlans() {
-    setShowPlans(false);
+  function goToRegister(
+    plan?: Plan | null
+  ) {
+    const targetPlan =
+      plan || selectedPlan;
+
+    if (targetPlan) {
+      localStorage.setItem(
+        "hdlink_pending_plan_id",
+        String(targetPlan.id)
+      );
+
+      window.location.href =
+        `/hdlink/auth/register?plan=${encodeURIComponent(
+          String(targetPlan.id)
+        )}`;
+
+      return;
+    }
+
+    window.location.href =
+      "/hdlink/auth/register";
   }
 
-  // ============================================================
-  // CLOSE PAYMENT
-  // ============================================================
+  /* =========================================================
+     CLOSE PAYMENT
+  ========================================================= */
 
   function closePayment() {
-    if (submitting) {
-      return;
-    }
+    if (submitting) return;
 
     setSelectedPlan(null);
     setUtr("");
@@ -541,95 +523,47 @@ export default function HDLinkPage() {
     );
 
     if (urlPlanId) {
-      router.replace(
-        "/hdlink"
-      );
+      router.replace("/hdlink");
     }
   }
 
-  // ============================================================
-  // LOGIN
-  // ============================================================
-
-  function goToLogin(
-    plan?: Plan | null
-  ) {
-    const targetPlan =
-      plan || selectedPlan;
-
-    if (targetPlan) {
-      const planId =
-        String(targetPlan.id);
-
-      localStorage.setItem(
-        "hdlink_pending_plan_id",
-        planId
-      );
-
-      window.location.href =
-        `/auth/login?hdlink=1&plan=${encodeURIComponent(
-          planId
-        )}`;
-
-      return;
-    }
-
-    window.location.href =
-      "/auth/login";
-  }
-
-  // ============================================================
-  // REGISTER
-  // ============================================================
-
-  function goToRegister(
-    plan?: Plan | null
-  ) {
-    const targetPlan =
-      plan || selectedPlan;
-
-    if (targetPlan) {
-      const planId =
-        String(targetPlan.id);
-
-      localStorage.setItem(
-        "hdlink_pending_plan_id",
-        planId
-      );
-
-      window.location.href =
-        `/auth/register?hdlink=1&plan=${encodeURIComponent(
-          planId
-        )}`;
-
-      return;
-    }
-
-    window.location.href =
-      "/auth/register";
-  }
-
-  // ============================================================
-  // VIDEO CLICK
-  // ============================================================
+  /* =========================================================
+     VIDEO
+  ========================================================= */
 
   function handleVideoClick(
-    _video: Video
+    video: Video
   ) {
     if (hasPremium) {
-      router.push(
-        "/premium"
-      );
+      if (video.video_url) {
+        window.open(
+          video.video_url,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      } else {
+        router.push(
+          "/hdlink/premium"
+        );
+      }
 
       return;
     }
 
-    openPlans();
+    const popularPlan =
+      plans.find(
+        (plan) =>
+          plan.duration_days === 15
+      ) || plans[0];
+
+    if (popularPlan) {
+      selectPlan(popularPlan);
+    }
   }
 
-  // ============================================================
-  // PAYMENT SUBMIT
-  // ============================================================
+  /* =========================================================
+     PAYMENT
+  ========================================================= */
 
   async function handlePaymentSubmit(
     e: FormEvent<HTMLFormElement>
@@ -644,13 +578,11 @@ export default function HDLinkPage() {
       setError(
         "Please select a plan."
       );
-
       return;
     }
 
     if (!user) {
       goToRegister(plan);
-
       return;
     }
 
@@ -661,7 +593,6 @@ export default function HDLinkPage() {
       setError(
         "Please enter your UTR / Transaction ID."
       );
-
       return;
     }
 
@@ -669,29 +600,19 @@ export default function HDLinkPage() {
       setError(
         "Please enter a valid UTR / Transaction ID."
       );
-
       return;
     }
 
     setSubmitting(true);
 
     try {
-      // ======================================================
-      // DUPLICATE UTR
-      // ======================================================
-
       const {
         data: existingPayment,
         error: duplicateError,
       } = await supabase
         .from("payment_requests")
-        .select(
-          "id,status"
-        )
-        .eq(
-          "utr",
-          transactionId
-        )
+        .select("id,status")
+        .eq("utr", transactionId)
         .maybeSingle();
 
       if (duplicateError) {
@@ -715,30 +636,17 @@ export default function HDLinkPage() {
         return;
       }
 
-      // ======================================================
-      // INSERT PAYMENT
-      // ======================================================
-
       const {
         data: insertedPayment,
         error: insertError,
       } = await supabase
         .from("payment_requests")
         .insert({
-          user_id:
-            user.id,
-
-          plan_id:
-            plan.id,
-
-          utr:
-            transactionId,
-
-          status:
-            "pending",
-
-          source:
-            "hdlink",
+          user_id: user.id,
+          plan_id: plan.id,
+          utr: transactionId,
+          status: "pending",
+          source: "hdlink",
         })
         .select(
           "id,user_id,plan_id,utr,status,source"
@@ -789,9 +697,9 @@ export default function HDLinkPage() {
     }
   }
 
-  // ============================================================
-  // PAYMENT APPROVAL CHECK
-  // ============================================================
+  /* =========================================================
+     PAYMENT POLLING
+  ========================================================= */
 
   useEffect(() => {
     if (
@@ -801,8 +709,6 @@ export default function HDLinkPage() {
     ) {
       return;
     }
-
-    const plan = selectedPlan;
 
     let stopped = false;
 
@@ -826,9 +732,7 @@ export default function HDLinkPage() {
               )
               .eq(
                 "id",
-                Number(
-                  pendingId
-                )
+                Number(pendingId)
               )
               .eq(
                 "user_id",
@@ -850,49 +754,35 @@ export default function HDLinkPage() {
               )
               .eq(
                 "plan_id",
-                plan.id
+                selectedPlan.id
               )
               .eq(
                 "source",
                 "hdlink"
               )
-              .order(
-                "id",
-                {
-                  ascending:
-                    false,
-                }
-              )
+              .order("id", {
+                ascending: false,
+              })
               .limit(1)
               .maybeSingle();
         }
 
         const {
           data: payment,
-          error:
-            paymentError,
-        } =
-          await paymentQuery;
+          error: paymentError,
+        } = await paymentQuery;
 
         if (paymentError) {
           console.error(
             "Payment status error:",
             paymentError
           );
-
           return;
         }
 
-        if (
-          !payment ||
-          stopped
-        ) {
+        if (!payment || stopped) {
           return;
         }
-
-        // ====================================================
-        // APPROVED
-        // ====================================================
 
         if (
           payment.status ===
@@ -922,21 +812,15 @@ export default function HDLinkPage() {
               "hdlink_pending_payment_id"
             );
 
-            setCheckingApproval(
-              false
-            );
+            setCheckingApproval(false);
 
             router.replace(
-              "/premium"
+              "/hdlink/premium"
             );
 
             return;
           }
         }
-
-        // ====================================================
-        // REJECTED
-        // ====================================================
 
         if (
           payment.status ===
@@ -946,13 +830,8 @@ export default function HDLinkPage() {
         ) {
           stopped = true;
 
-          setCheckingApproval(
-            false
-          );
-
-          setPaymentSubmitted(
-            false
-          );
+          setCheckingApproval(false);
+          setPaymentSubmitted(false);
 
           localStorage.removeItem(
             "hdlink_pending_payment_id"
@@ -980,7 +859,6 @@ export default function HDLinkPage() {
 
     return () => {
       stopped = true;
-
       window.clearInterval(
         interval
       );
@@ -992,65 +870,59 @@ export default function HDLinkPage() {
     router,
   ]);
 
-  // ============================================================
-  // FEATURES
-  // ============================================================
+  /* =========================================================
+     FEATURES
+  ========================================================= */
 
   const features = useMemo(
     () => [
       {
-        title:
-          "Premium HD video access",
-        text:
-          "Access premium videos after your payment is approved.",
+        icon: "⚡",
+        title: "Quick activation",
+        text: "Submit your payment UTR and wait for manual verification.",
       },
       {
-        title:
-          "Secure account access",
-        text:
-          "Your premium access is connected to your account.",
+        icon: "🔐",
+        title: "Account protected",
+        text: "Your premium access is connected directly to your account.",
       },
       {
-        title:
-          "Manual payment verification",
-        text:
-          "Every payment request is reviewed before activation.",
+        icon: "🎬",
+        title: "Premium library",
+        text: "Unlock premium video content after approval.",
       },
       {
-        title:
-          "Fast approval detection",
-        text:
-          "Once approved, your account is checked automatically.",
+        icon: "📱",
+        title: "Mobile friendly",
+        text: "HDLink is designed to work smoothly on phones and desktops.",
       },
       {
-        title:
-          "Direct Premium access",
-        text:
-          "After approval you are automatically redirected to Premium.",
+        icon: "✓",
+        title: "Manual verification",
+        text: "Every payment request is checked before premium access.",
       },
       {
-        title:
-          "Protected video library",
-        text:
-          "Locked previews remain protected until premium access is active.",
+        icon: "🚀",
+        title: "Automatic detection",
+        text: "Your account is checked automatically after payment approval.",
       },
     ],
     []
   );
 
-  // ============================================================
-  // LOADING
-  // ============================================================
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#070707] text-white">
         <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black shadow-2xl">
             H
           </div>
 
-          <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+          <div className="mx-auto mt-6 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
           <p className="mt-4 text-sm text-white/40">
             Loading HDLink...
@@ -1060,27 +932,29 @@ export default function HDLinkPage() {
     );
   }
 
-  // ============================================================
-  // PAGE
-  // ============================================================
+  /* =========================================================
+     PAGE
+  ========================================================= */
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#050505] text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#070707] text-white">
 
       {/* BACKGROUND */}
 
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[-250px] h-[650px] w-[900px] -translate-x-1/2 rounded-full bg-purple-500/[0.08] blur-[150px]" />
+        <div className="absolute left-1/2 top-[-300px] h-[700px] w-[1000px] -translate-x-1/2 rounded-full bg-violet-600/[0.10] blur-[160px]" />
 
-        <div className="absolute right-[-200px] top-[500px] h-[500px] w-[500px] rounded-full bg-blue-500/[0.05] blur-[140px]" />
+        <div className="absolute right-[-250px] top-[400px] h-[600px] w-[600px] rounded-full bg-blue-600/[0.06] blur-[150px]" />
 
-        <div className="absolute bottom-[-250px] left-[-200px] h-[500px] w-[500px] rounded-full bg-pink-500/[0.04] blur-[140px]" />
+        <div className="absolute bottom-[-300px] left-[-250px] h-[600px] w-[600px] rounded-full bg-fuchsia-600/[0.05] blur-[150px]" />
       </div>
 
-      {/* NAVBAR */}
+      {/* =====================================================
+          NAVBAR
+      ===================================================== */}
 
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#050505]/75 backdrop-blur-2xl">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#070707]/80 backdrop-blur-2xl">
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
 
           <button
             onClick={() =>
@@ -1091,22 +965,38 @@ export default function HDLinkPage() {
             }
             className="flex items-center gap-3"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg font-black text-black shadow-xl">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-lg font-black text-black">
               H
             </div>
 
             <div className="text-left">
-              <div className="text-lg font-black tracking-tight">
+              <div className="text-base font-black tracking-tight">
                 HDLink
               </div>
 
-              <div className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">
-                Premium Streaming
+              <div className="text-[8px] font-bold uppercase tracking-[0.3em] text-white/30">
+                Premium Access
               </div>
             </div>
           </button>
 
-          <div className="hidden items-center gap-8 md:flex">
+          <nav className="hidden items-center gap-7 md:flex">
+            <button
+              onClick={() =>
+                document
+                  .getElementById(
+                    "plans"
+                  )
+                  ?.scrollIntoView({
+                    behavior:
+                      "smooth",
+                  })
+              }
+              className="text-sm text-white/45 transition hover:text-white"
+            >
+              Plans
+            </button>
+
             <button
               onClick={() =>
                 document
@@ -1118,16 +1008,9 @@ export default function HDLinkPage() {
                       "smooth",
                   })
               }
-              className="text-sm text-white/50 transition hover:text-white"
+              className="text-sm text-white/45 transition hover:text-white"
             >
               Videos
-            </button>
-
-            <button
-              onClick={openPlans}
-              className="text-sm text-white/50 transition hover:text-white"
-            >
-              Plans
             </button>
 
             <button
@@ -1141,30 +1024,39 @@ export default function HDLinkPage() {
                       "smooth",
                   })
               }
-              className="text-sm text-white/50 transition hover:text-white"
+              className="text-sm text-white/45 transition hover:text-white"
             >
               Features
             </button>
-          </div>
+          </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {hasPremium ? (
               <button
                 onClick={() =>
                   router.push(
-                    "/premium"
+                    "/hdlink/premium"
                   )
                 }
-                className="rounded-full bg-white px-5 py-2.5 text-xs font-black text-black transition hover:bg-white/90"
+                className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black transition hover:bg-white/90 sm:px-5"
               >
-                Open Premium →
+                Premium →
               </button>
             ) : user ? (
               <button
-                onClick={openPlans}
-                className="rounded-full bg-white px-5 py-2.5 text-xs font-bold text-black transition hover:bg-white/90"
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "plans"
+                    )
+                    ?.scrollIntoView({
+                      behavior:
+                        "smooth",
+                    })
+                }
+                className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black transition hover:bg-white/90 sm:px-5"
               >
-                Get Premium
+                Get Access
               </button>
             ) : (
               <>
@@ -1172,16 +1064,25 @@ export default function HDLinkPage() {
                   onClick={() =>
                     goToLogin()
                   }
-                  className="hidden rounded-full border border-white/10 px-5 py-2.5 text-xs font-semibold text-white/70 transition hover:bg-white/5 hover:text-white sm:block"
+                  className="hidden rounded-full border border-white/10 px-4 py-2.5 text-xs font-bold text-white/60 transition hover:bg-white/5 hover:text-white sm:block"
                 >
                   Login
                 </button>
 
                 <button
-                  onClick={openPlans}
-                  className="rounded-full bg-white px-5 py-2.5 text-xs font-bold text-black transition hover:bg-white/90"
+                  onClick={() =>
+                    document
+                      .getElementById(
+                        "plans"
+                      )
+                      ?.scrollIntoView({
+                        behavior:
+                          "smooth",
+                      })
+                  }
+                  className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black transition hover:bg-white/90 sm:px-5"
                 >
-                  Get Premium
+                  Get Access
                 </button>
               </>
             )}
@@ -1189,56 +1090,51 @@ export default function HDLinkPage() {
         </div>
       </header>
 
-      {/* HERO */}
+      {/* =====================================================
+          HERO
+      ===================================================== */}
 
-      <section className="relative z-10 px-5 pb-20 pt-20 sm:pb-28 sm:pt-28">
+      <section className="relative z-10 px-4 pb-10 pt-14 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8">
         <div className="mx-auto max-w-7xl">
 
           <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_.95fr]">
 
             <div>
-
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-white/60 backdrop-blur-xl">
-                <span className="h-2 w-2 rounded-full bg-green-400" />
-                HDLink Premium is live
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-bold text-white/60">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.7)]" />
+                HDLink is live
               </div>
 
-              <h1 className="max-w-4xl text-5xl font-black tracking-[-0.04em] sm:text-6xl lg:text-7xl">
-                Premium videos.
+              <h1 className="max-w-3xl text-5xl font-black leading-[0.95] tracking-[-0.055em] sm:text-6xl lg:text-7xl">
+                Premium access.
                 <br />
-                <span className="text-white/40">
-                  One simple access.
+                <span className="text-white/35">
+                  Simple &amp; fast.
                 </span>
               </h1>
 
-              <p className="mt-7 max-w-2xl text-base leading-7 text-white/45 sm:text-lg">
-                Explore premium video previews,
-                choose your plan and unlock
-                HDLink access after secure
-                payment verification.
+              <p className="mt-7 max-w-xl text-base leading-7 text-white/45 sm:text-lg">
+                Choose a plan, complete your
+                payment and unlock the HDLink
+                premium library after approval.
               </p>
 
-              <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-
-                {hasPremium ? (
-                  <button
-                    onClick={() =>
-                      router.push(
-                        "/premium"
+              <div className="mt-8 flex flex-wrap gap-3">
+                <button
+                  onClick={() =>
+                    document
+                      .getElementById(
+                        "plans"
                       )
-                    }
-                    className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02]"
-                  >
-                    Open Premium →
-                  </button>
-                ) : (
-                  <button
-                    onClick={openPlans}
-                    className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02]"
-                  >
-                    Unlock Premium →
-                  </button>
-                )}
+                      ?.scrollIntoView({
+                        behavior:
+                          "smooth",
+                      })
+                  }
+                  className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02]"
+                >
+                  View Plans →
+                </button>
 
                 <button
                   onClick={() =>
@@ -1251,36 +1147,26 @@ export default function HDLinkPage() {
                           "smooth",
                       })
                   }
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-7 py-4 text-sm font-semibold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-7 py-4 text-sm font-bold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
                 >
-                  Explore previews
+                  Explore Videos
                 </button>
-
               </div>
 
               <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-xs text-white/30">
-                <span>
-                  ✓ Secure payment
-                </span>
-
-                <span>
-                  ✓ Manual verification
-                </span>
-
-                <span>
-                  ✓ Account based access
-                </span>
+                <span>✓ Secure payment</span>
+                <span>✓ Manual verification</span>
+                <span>✓ Account based access</span>
               </div>
-
             </div>
 
+            {/* HERO PREVIEW */}
+
             <div className="relative">
+              <div className="absolute -inset-5 rounded-[40px] bg-violet-500/[0.06] blur-3xl" />
 
-              <div className="absolute -inset-5 rounded-[40px] bg-white/[0.03] blur-2xl" />
-
-              <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] p-2 shadow-2xl">
-
-                <div className="relative aspect-video overflow-hidden rounded-[25px] bg-[#111]">
+              <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.04] p-2 shadow-2xl">
+                <div className="relative aspect-[16/10] overflow-hidden rounded-[24px] bg-[#111]">
 
                   {videos[0]?.thumbnail_url ? (
                     <img
@@ -1288,129 +1174,418 @@ export default function HDLinkPage() {
                         videos[0]
                           .thumbnail_url
                       }
-                      alt="HDLink premium preview"
-                      className="h-full w-full scale-110 object-cover blur-[5px] opacity-60"
+                      alt="HDLink Premium"
+                      className="h-full w-full scale-110 object-cover blur-[6px] opacity-60"
                     />
                   ) : (
-                    <div className="h-full w-full bg-gradient-to-br from-white/10 to-black" />
+                    <div className="h-full w-full bg-gradient-to-br from-violet-500/20 via-black to-blue-500/10" />
                   )}
 
-                  <div className="absolute inset-0 bg-black/55" />
+                  <div className="absolute inset-0 bg-black/60" />
+
+                  <div className="absolute left-5 top-5 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-white/60 backdrop-blur-xl">
+                    HDLink Premium
+                  </div>
 
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-white/10 backdrop-blur-xl">
-                      <span className="text-2xl">
-                        🔒
-                      </span>
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border border-white/15 bg-white/[0.08] text-2xl backdrop-blur-xl">
+                      🔒
                     </div>
                   </div>
 
                   <div className="absolute bottom-5 left-5 right-5">
-
-                    <div className="rounded-2xl border border-white/10 bg-black/50 p-4 backdrop-blur-xl">
-
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/35">
-                        Premium Preview
+                    <div className="rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-xl">
+                      <div className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/30">
+                        Premium Library
                       </div>
 
-                      <div className="mt-2 text-lg font-bold">
+                      <div className="mt-2 text-lg font-black">
                         {hasPremium
                           ? "Premium access active"
-                          : "Unlock to watch"}
+                          : "Unlock premium videos"}
                       </div>
 
-                      <div className="mt-1 text-xs text-white/40">
+                      <div className="mt-1 text-xs text-white/35">
                         {hasPremium
-                          ? "Your account has premium access."
-                          : "Premium content is protected."}
+                          ? "Your account is ready."
+                          : "Choose a plan below to continue."}
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
-
             </div>
 
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          PLANS
+      ===================================================== */}
+
+      <section
+        id="plans"
+        className="relative z-10 px-4 py-14 sm:px-6 sm:py-20 lg:px-8"
+      >
+        <div className="mx-auto max-w-7xl">
+
+          <div className="text-center">
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
+              Simple pricing
+            </div>
+
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+              Choose your plan
+            </h2>
+
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-white/40">
+              No complicated packages. Pick the
+              duration that works for you and get
+              premium HDLink access.
+            </p>
+          </div>
+
+          {error &&
+            !selectedPlan && (
+              <div className="mx-auto mt-7 max-w-xl rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-center text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+          <div className="mt-10 grid gap-5 md:grid-cols-3">
+
+            {loadingPlans ? (
+              Array.from({
+                length: 3,
+              }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-[330px] animate-pulse rounded-[28px] border border-white/10 bg-white/[0.03]"
+                />
+              ))
+            ) : plans.length > 0 ? (
+              plans.map((plan) => {
+                const popular =
+                  plan.duration_days ===
+                  15;
+
+                const oneDay =
+                  plan.duration_days ===
+                  1;
+
+                const thirtyDay =
+                  plan.duration_days ===
+                  30;
+
+                return (
+                  <div
+                    key={plan.id}
+                    className={`relative overflow-hidden rounded-[28px] border p-7 transition duration-300 hover:-translate-y-1 ${
+                      popular
+                        ? "border-white/30 bg-white/[0.09] shadow-2xl shadow-white/[0.04]"
+                        : "border-white/10 bg-white/[0.035] hover:border-white/20"
+                    }`}
+                  >
+
+                    {popular && (
+                      <div className="absolute right-5 top-5 rounded-full bg-white px-3 py-1.5 text-[9px] font-black text-black">
+                        ⭐ MOST POPULAR
+                      </div>
+                    )}
+
+                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">
+                      {oneDay
+                        ? "Quick Access"
+                        : thirtyDay
+                        ? "Best Value"
+                        : "Popular Choice"}
+                    </div>
+
+                    <div className="mt-7 flex items-end gap-2">
+                      <span className="text-5xl font-black tracking-tight">
+                        ₹{plan.price}
+                      </span>
+
+                      <span className="mb-2 text-xs text-white/30">
+                        / plan
+                      </span>
+                    </div>
+
+                    <div className="mt-3 text-lg font-bold">
+                      {plan.name}
+                    </div>
+
+                    <div className="mt-1 text-xs text-white/35">
+                      {plan.duration_days} day
+                      {plan.duration_days !==
+                      1
+                        ? "s"
+                        : ""}{" "}
+                      premium access
+                    </div>
+
+                    <div className="my-6 h-px bg-white/10" />
+
+                    <div className="space-y-3 text-xs text-white/50">
+                      <div className="flex gap-2">
+                        <span className="text-emerald-400">
+                          ✓
+                        </span>
+                        Premium video access
+                      </div>
+
+                      <div className="flex gap-2">
+                        <span className="text-emerald-400">
+                          ✓
+                        </span>
+                        Account based access
+                      </div>
+
+                      <div className="flex gap-2">
+                        <span className="text-emerald-400">
+                          ✓
+                        </span>
+                        Manual payment verification
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        selectPlan(
+                          plan
+                        )
+                      }
+                      className={`mt-7 w-full rounded-full px-5 py-4 text-sm font-black transition ${
+                        popular
+                          ? "bg-white text-black hover:bg-white/90"
+                          : "border border-white/10 bg-white/[0.07] text-white hover:bg-white/[0.12]"
+                      }`}
+                    >
+                      Get {plan.name} →
+                    </button>
+
+                    {plan.description && (
+                      <p className="mt-4 text-center text-[10px] leading-5 text-white/25">
+                        {plan.description}
+                      </p>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <>
+                {/* FALLBACK DISPLAY */}
+
+                {[
+                  {
+                    name: "1 Day",
+                    price: 30,
+                    days: 1,
+                  },
+                  {
+                    name: "15 Days",
+                    price: 90,
+                    days: 15,
+                  },
+                  {
+                    name: "30 Days",
+                    price: 120,
+                    days: 30,
+                  },
+                ].map(
+                  (fallback, index) => (
+                    <div
+                      key={
+                        fallback.days
+                      }
+                      className={`rounded-[28px] border p-7 ${
+                        index === 1
+                          ? "border-white/30 bg-white/[0.09]"
+                          : "border-white/10 bg-white/[0.035]"
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-white/35">
+                        {index === 1
+                          ? "⭐ MOST POPULAR"
+                          : "HDLink ACCESS"}
+                      </div>
+
+                      <div className="mt-7 text-5xl font-black">
+                        ₹
+                        {
+                          fallback.price
+                        }
+                      </div>
+
+                      <div className="mt-3 text-lg font-bold">
+                        {
+                          fallback.name
+                        }
+                      </div>
+
+                      <div className="mt-1 text-xs text-white/35">
+                        Premium access
+                      </div>
+
+                      <button
+                        className="mt-8 w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black"
+                        onClick={() =>
+                          setError(
+                            "Plans are currently loading. Please refresh the page."
+                          )
+                        }
+                      >
+                        Get Access →
+                      </button>
+                    </div>
+                  )
+                )}
+              </>
+            )}
+
+          </div>
+
+          <div className="mx-auto mt-7 max-w-3xl rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-xs text-white/30">
+            🔐 Payment is manually verified.
+            Your premium access activates after
+            admin approval.
           </div>
 
         </div>
       </section>
 
-      {/* VIDEO SECTION */}
+      {/* =====================================================
+          HOW IT WORKS
+      ===================================================== */}
+
+      <section className="relative z-10 border-y border-white/[0.07] bg-white/[0.015] px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+
+          <div className="text-center">
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
+              Easy process
+            </div>
+
+            <h2 className="mt-3 text-3xl font-black">
+              Get premium in 3 steps
+            </h2>
+          </div>
+
+          <div className="mt-10 grid gap-5 md:grid-cols-3">
+
+            {[
+              {
+                number: "01",
+                title: "Choose a plan",
+                text: "Select 1 Day, 15 Days or 30 Days from the plans above.",
+              },
+              {
+                number: "02",
+                title: "Make payment",
+                text: "Scan the QR code and submit your UTR / Transaction ID.",
+              },
+              {
+                number: "03",
+                title: "Get approved",
+                text: "After admin approval, your premium access activates automatically.",
+              },
+            ].map((step) => (
+              <div
+                key={step.number}
+                className="rounded-3xl border border-white/10 bg-white/[0.03] p-6"
+              >
+                <div className="text-xs font-black text-white/25">
+                  {step.number}
+                </div>
+
+                <h3 className="mt-5 text-base font-bold">
+                  {step.title}
+                </h3>
+
+                <p className="mt-2 text-xs leading-6 text-white/35">
+                  {step.text}
+                </p>
+              </div>
+            ))}
+
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          VIDEOS
+      ===================================================== */}
 
       <section
         id="videos"
-        className="relative z-10 border-t border-white/10 px-5 py-20 sm:py-24"
+        className="relative z-10 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
       >
         <div className="mx-auto max-w-7xl">
 
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-
             <div>
-              <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
+              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
                 Premium library
               </div>
 
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-                Explore what&apos;s inside
+              <h2 className="mt-3 text-3xl font-black sm:text-4xl">
+                Explore the library
               </h2>
 
               <p className="mt-3 max-w-xl text-sm leading-6 text-white/40">
-                Preview the premium library before
-                choosing your plan.
+                Preview the HDLink library before
+                unlocking your premium access.
               </p>
             </div>
 
             <button
-              onClick={
-                hasPremium
-                  ? () =>
-                      router.push(
-                        "/premium"
-                      )
-                  : openPlans
-              }
-              className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-bold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+              onClick={() => {
+                if (hasPremium) {
+                  router.push(
+                    "/hdlink/premium"
+                  );
+                } else {
+                  document
+                    .getElementById(
+                      "plans"
+                    )
+                    ?.scrollIntoView({
+                      behavior:
+                        "smooth",
+                    });
+                }
+              }}
+              className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-black text-white/70 transition hover:bg-white/[0.08] hover:text-white"
             >
               {hasPremium
                 ? "Open Premium →"
-                : "View Plans →"}
+                : "Unlock Library →"}
             </button>
-
           </div>
 
-          <div className="mt-10">
+          <div className="mt-9">
 
             {loadingVideos ? (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-
                 {Array.from({
                   length: 8,
-                }).map(
-                  (_, index) => (
-                    <div
-                      key={index}
-                      className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
-                    >
-                      <div className="aspect-video animate-pulse bg-white/10" />
+                }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
+                  >
+                    <div className="aspect-video animate-pulse bg-white/10" />
 
-                      <div className="space-y-2 p-4">
-                        <div className="h-4 animate-pulse rounded bg-white/10" />
-
-                        <div className="h-3 w-1/2 animate-pulse rounded bg-white/5" />
-                      </div>
+                    <div className="space-y-2 p-4">
+                      <div className="h-4 animate-pulse rounded bg-white/10" />
+                      <div className="h-3 w-1/2 animate-pulse rounded bg-white/5" />
                     </div>
-                  )
-                )}
-
+                  </div>
+                ))}
               </div>
             ) : videos.length === 0 ? (
               <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-12 text-center">
-
                 <div className="text-4xl">
                   🎬
                 </div>
@@ -1419,14 +1594,13 @@ export default function HDLinkPage() {
                   Premium library
                 </h3>
 
-                <p className="mt-2 text-sm text-white/40">
-                  Video previews are currently unavailable.
+                <p className="mt-2 text-sm text-white/35">
+                  Video previews are
+                  currently unavailable.
                 </p>
-
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-
                 {videos.map(
                   (
                     video,
@@ -1443,7 +1617,6 @@ export default function HDLinkPage() {
                       }
                       className="group text-left"
                     >
-
                       <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] transition duration-300 group-hover:-translate-y-1 group-hover:border-white/20">
 
                         <div className="relative aspect-video overflow-hidden bg-[#111]">
@@ -1455,14 +1628,15 @@ export default function HDLinkPage() {
                               }
                               alt={
                                 video.title ||
-                                `Premium video ${
-                                  index + 1
+                                `Premium Video ${
+                                  index +
+                                  1
                                 }`
                               }
                               className={`h-full w-full object-cover transition duration-500 ${
                                 hasPremium
                                   ? "group-hover:scale-110"
-                                  : "scale-105 blur-[4px] opacity-65 group-hover:scale-110"
+                                  : "scale-105 blur-[5px] opacity-60 group-hover:scale-110"
                               }`}
                             />
                           ) : (
@@ -1471,342 +1645,201 @@ export default function HDLinkPage() {
 
                           {!hasPremium && (
                             <>
-                              <div className="absolute inset-0 bg-black/45" />
+                              <div className="absolute inset-0 bg-black/50" />
 
                               <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-black/45 text-xl shadow-xl backdrop-blur-xl">
+                                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-black/50 text-xl backdrop-blur-xl">
                                   🔒
                                 </div>
                               </div>
 
-                              <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/70 backdrop-blur-xl">
+                              <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white/65 backdrop-blur-xl">
                                 Premium
                               </div>
                             </>
                           )}
 
                           {hasPremium && (
-                            <div className="absolute left-3 top-3 rounded-full bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-black">
+                            <div className="absolute left-3 top-3 rounded-full bg-white px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-black">
                               Watch
                             </div>
                           )}
 
                           {video.duration && (
-                            <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/80">
+                            <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-[10px] font-bold text-white/75">
                               {String(
                                 video.duration
                               )}
                             </div>
                           )}
-
                         </div>
 
                         <div className="p-4">
-
                           <h3 className="line-clamp-2 text-sm font-bold leading-5 text-white/90">
                             {video.title ||
                               `Premium Video ${
-                                index + 1
+                                index +
+                                1
                               }`}
                           </h3>
 
                           <div className="mt-3 flex items-center justify-between">
-
-                            <span className="text-[11px] text-white/30">
-                              {hasPremium
-                                ? "Premium access"
-                                : "Premium content"}
+                            <span className="text-[10px] text-white/25">
+                              HDLink Premium
                             </span>
 
-                            <span className="text-[11px] font-bold text-white/50">
+                            <span className="text-[10px] font-black text-white/45">
                               {hasPremium
                                 ? "Watch →"
                                 : "Unlock →"}
                             </span>
-
                           </div>
-
                         </div>
 
                       </div>
-
                     </button>
                   )
                 )}
-
               </div>
             )}
 
           </div>
-
         </div>
       </section>
 
-      {/* PREMIUM BANNER */}
-
-      <section className="relative z-10 px-5 py-10">
-        <div className="mx-auto max-w-7xl">
-
-          <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.04] p-8 sm:p-12">
-
-            <div className="absolute right-[-100px] top-[-150px] h-[350px] w-[350px] rounded-full bg-purple-500/[0.08] blur-[100px]" />
-
-            <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
-
-              <div>
-
-                <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
-                  HDLink Premium
-                </div>
-
-                <h2 className="text-3xl font-black tracking-tight sm:text-4xl">
-                  {hasPremium
-                    ? "Your Premium is ready."
-                    : "Ready to unlock the library?"}
-                </h2>
-
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/40">
-                  {hasPremium
-                    ? "Your payment has been approved. Open Premium and start watching."
-                    : "Choose your plan and submit your payment request for manual verification."}
-                </p>
-
-              </div>
-
-              <button
-                onClick={
-                  hasPremium
-                    ? () =>
-                        router.push(
-                          "/premium"
-                        )
-                    : openPlans
-                }
-                className="rounded-full bg-white px-7 py-4 text-sm font-black text-black transition hover:bg-white/90"
-              >
-                {hasPremium
-                  ? "Open Premium →"
-                  : "Choose Plan →"}
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* FEATURES */}
+      {/* =====================================================
+          FEATURES
+      ===================================================== */}
 
       <section
         id="features"
-        className="relative z-10 px-5 py-20 sm:py-24"
+        className="relative z-10 border-t border-white/[0.07] px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
       >
         <div className="mx-auto max-w-7xl">
 
-          <div className="max-w-2xl">
-
-            <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
               Why HDLink
             </div>
 
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-              Built for premium access
+            <h2 className="mt-3 text-3xl font-black sm:text-4xl">
+              Everything stays simple
             </h2>
-
           </div>
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
+          <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map(
-              (
-                feature,
-                index
-              ) => (
+              (feature) => (
                 <div
                   key={
                     feature.title
                   }
                   className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:bg-white/[0.05]"
                 >
-
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sm font-black text-black">
-                    {index + 1}
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.08] text-lg">
+                    {
+                      feature.icon
+                    }
                   </div>
 
-                  <h3 className="mt-5 text-sm font-bold text-white/90">
-                    {feature.title}
+                  <h3 className="mt-5 text-sm font-bold">
+                    {
+                      feature.title
+                    }
                   </h3>
 
-                  <p className="mt-2 text-xs leading-5 text-white/35">
-                    {feature.text}
+                  <p className="mt-2 text-xs leading-6 text-white/35">
+                    {
+                      feature.text
+                    }
                   </p>
-
                 </div>
               )
             )}
+          </div>
+        </div>
+      </section>
 
+      {/* =====================================================
+          FINAL CTA
+      ===================================================== */}
+
+      <section className="relative z-10 px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+
+          <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.045] p-8 sm:p-12">
+
+            <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-violet-500/[0.08] blur-[100px]" />
+
+            <div className="relative flex flex-col items-start justify-between gap-7 lg:flex-row lg:items-center">
+
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
+                  HDLink Premium
+                </div>
+
+                <h2 className="mt-3 text-3xl font-black sm:text-4xl">
+                  Ready to unlock?
+                </h2>
+
+                <p className="mt-3 max-w-xl text-sm leading-6 text-white/40">
+                  Pick your plan and start
+                  your premium access journey.
+                </p>
+              </div>
+
+              <button
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "plans"
+                    )
+                    ?.scrollIntoView({
+                      behavior:
+                        "smooth",
+                    })
+                }
+                className="rounded-full bg-white px-7 py-4 text-sm font-black text-black transition hover:bg-white/90"
+              >
+                Choose Your Plan →
+              </button>
+
+            </div>
           </div>
 
         </div>
       </section>
 
-      {/* ======================================================
-          PLANS MODAL
-      ====================================================== */}
-
-      {showPlans && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-xl">
-
-          <div className="my-8 w-full max-w-5xl rounded-[30px] border border-white/10 bg-[#0b0b0b] p-6 shadow-2xl sm:p-8">
-
-            <div className="flex items-start justify-between gap-5">
-
-              <div>
-
-                <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
-                  HDLink Premium
-                </div>
-
-                <h2 className="mt-2 text-3xl font-black">
-                  Choose your plan
-                </h2>
-
-                <p className="mt-2 text-sm text-white/40">
-                  Select a plan to continue.
-                </p>
-
-              </div>
-
-              <button
-                onClick={closePlans}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-xl text-white/50 transition hover:bg-white/10 hover:text-white"
-              >
-                ×
-              </button>
-
-            </div>
-
-            <div className="mt-8">
-
-              {loadingPlans ? (
-                <div className="py-16 text-center text-sm text-white/40">
-                  Loading plans...
-                </div>
-              ) : plans.length === 0 ? (
-                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-center text-sm text-red-300">
-                  No HDLink plans are currently available.
-                </div>
-              ) : (
-                <div className="grid gap-5 md:grid-cols-3">
-
-                  {plans.map(
-                    (plan) => {
-
-                      const popular =
-                        plan.duration_days ===
-                        15;
-
-                      return (
-                        <div
-                          key={
-                            plan.id
-                          }
-                          className={`relative rounded-3xl border p-6 ${
-                            popular
-                              ? "border-white/30 bg-white/[0.08]"
-                              : "border-white/10 bg-white/[0.03]"
-                          }`}
-                        >
-
-                          {popular && (
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-4 py-1 text-[10px] font-black text-black">
-                              ⭐ MOST POPULAR
-                            </div>
-                          )}
-
-                          <div className="text-xs font-bold uppercase tracking-wider text-white/35">
-                            {plan.name}
-                          </div>
-
-                          <div className="mt-4 text-4xl font-black">
-                            ₹{plan.price}
-                          </div>
-
-                          <div className="mt-1 text-xs text-white/35">
-                            {plan.duration_days}{" "}
-                            day
-                            {plan.duration_days !==
-                            1
-                              ? "s"
-                              : ""}{" "}
-                            premium access
-                          </div>
-
-                          <p className="mt-5 min-h-[40px] text-xs leading-5 text-white/40">
-                            {plan.description ||
-                              "Premium HDLink access"}
-                          </p>
-
-                          <button
-                            onClick={() =>
-                              selectPlan(
-                                plan
-                              )
-                            }
-                            className="mt-6 w-full rounded-full bg-white px-5 py-3.5 text-xs font-black text-black transition hover:bg-white/90"
-                          >
-                            Buy This Plan →
-                          </button>
-
-                        </div>
-                      );
-                    }
-                  )}
-
-                </div>
-              )}
-
-            </div>
-
-            <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-xs leading-5 text-white/30">
-              Payment is manually verified.
-              Premium access activates after admin approval.
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ======================================================
+      {/* =====================================================
           PAYMENT MODAL
-      ====================================================== */}
+      ===================================================== */}
 
       {selectedPlan &&
         user &&
         !paymentSubmitted && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-xl">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/90 p-4 backdrop-blur-xl">
 
-            <div className="my-6 max-h-[95vh] w-full max-w-md overflow-y-auto rounded-[30px] border border-white/10 bg-[#0c0c0c] p-6 shadow-2xl sm:p-8">
+            <div className="my-5 max-h-[95vh] w-full max-w-md overflow-y-auto rounded-[30px] border border-white/10 bg-[#0c0c0c] p-6 shadow-2xl sm:p-8">
 
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-5">
 
                 <div>
-
-                  <div className="text-xs font-bold uppercase tracking-wider text-white/30">
-                    Secure Payment
+                  <div className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">
+                    HDLink Payment
                   </div>
 
                   <h2 className="mt-2 text-2xl font-black">
-                    {selectedPlan?.name}
+                    {selectedPlan.name}
                   </h2>
 
-                  <p className="mt-1 text-sm text-white/40">
-                    ₹{selectedPlan?.price} •{" "}
-                    {selectedPlan?.duration_days} days
+                  <p className="mt-1 text-sm text-white/35">
+                    ₹{selectedPlan.price}{" "}
+                    •{" "}
+                    {
+                      selectedPlan.duration_days
+                    }{" "}
+                    days
                   </p>
-
                 </div>
 
                 <button
@@ -1816,51 +1849,61 @@ export default function HDLinkPage() {
                   disabled={
                     submitting
                   }
-                  className="text-2xl text-white/30 hover:text-white disabled:opacity-50"
+                  className="text-2xl text-white/30 transition hover:text-white disabled:opacity-40"
                 >
                   ×
                 </button>
 
               </div>
 
-              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              {/* PLAN SUMMARY */}
 
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-center justify-between">
 
                   <div>
-
-                    <div className="text-xs text-white/30">
+                    <div className="text-[10px] uppercase tracking-wider text-white/25">
                       Selected plan
                     </div>
 
                     <div className="mt-1 text-sm font-bold">
-                      {selectedPlan?.name}
+                      {
+                        selectedPlan.name
+                      }
                     </div>
-
                   </div>
 
                   <div className="text-2xl font-black">
-                    ₹{selectedPlan?.price}
+                    ₹
+                    {
+                      selectedPlan.price
+                    }
                   </div>
 
                 </div>
-
               </div>
 
-              <div className="mt-5 rounded-3xl bg-white p-4">
+              {/* QR */}
 
+              <div className="mt-5 rounded-3xl bg-white p-4">
                 <img
                   src="/hdlink-qr.png"
                   alt="HDLink Payment QR"
                   className="mx-auto h-auto w-full max-w-[280px]"
                 />
-
               </div>
 
               <div className="mt-3 text-center text-xs text-white/30">
-                Scan QR and pay exactly ₹
-                {selectedPlan?.price}
+                Scan QR and pay exactly{" "}
+                <span className="font-bold text-white/60">
+                  ₹
+                  {
+                    selectedPlan.price
+                  }
+                </span>
               </div>
+
+              {/* FORM */}
 
               <form
                 onSubmit={
@@ -1868,10 +1911,9 @@ export default function HDLinkPage() {
                 }
                 className="mt-6"
               >
-
                 <label
                   htmlFor="hdlink-utr"
-                  className="mb-2 block text-sm font-semibold text-white/70"
+                  className="mb-2 block text-sm font-bold text-white/70"
                 >
                   UTR / Transaction ID
                 </label>
@@ -1885,7 +1927,7 @@ export default function HDLinkPage() {
                       e.target.value
                     )
                   }
-                  placeholder="Enter your UTR / Transaction ID"
+                  placeholder="Enter UTR / Transaction ID"
                   disabled={
                     submitting
                   }
@@ -1906,25 +1948,24 @@ export default function HDLinkPage() {
                   className="mt-5 w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting
-                    ? "Submitting Request..."
+                    ? "Submitting..."
                     : "Submit Payment Request"}
                 </button>
-
               </form>
 
-              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-xs leading-5 text-white/30">
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-[11px] leading-5 text-white/30">
                 After submitting your UTR,
-                please wait for manual admin approval.
+                your payment will be manually
+                verified by the admin.
               </div>
 
             </div>
-
           </div>
         )}
 
-      {/* ======================================================
+      {/* =====================================================
           PAYMENT WAITING
-      ====================================================== */}
+      ===================================================== */}
 
       {paymentSubmitted && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-5 backdrop-blur-2xl">
@@ -1939,17 +1980,16 @@ export default function HDLinkPage() {
 
                 <div className="relative flex h-24 w-24 items-center justify-center rounded-full border border-white/15 bg-white/[0.06]">
 
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-2xl text-black">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-2xl font-black text-black">
                     ✓
                   </div>
 
                 </div>
-
               </div>
 
               <div className="mt-7">
 
-                <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
+                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
                   Payment Request
                 </div>
 
@@ -1957,8 +1997,8 @@ export default function HDLinkPage() {
                   Request Submitted
                 </h2>
 
-                <p className="mt-4 text-sm leading-7 text-white/45">
-                  Your payment request has been
+                <p className="mt-4 text-sm leading-7 text-white/40">
+                  Your payment request was
                   successfully submitted.
                 </p>
 
@@ -1970,19 +2010,22 @@ export default function HDLinkPage() {
                   <div className="flex items-center justify-between">
 
                     <div className="text-left">
-
-                      <div className="text-[10px] uppercase tracking-wider text-white/30">
+                      <div className="text-[9px] uppercase tracking-wider text-white/25">
                         Selected Plan
                       </div>
 
                       <div className="mt-1 text-sm font-bold">
-                        {selectedPlan?.name}
+                        {
+                          selectedPlan.name
+                        }
                       </div>
-
                     </div>
 
                     <div className="text-xl font-black">
-                      ₹{selectedPlan?.price}
+                      ₹
+                      {
+                        selectedPlan.price
+                      }
                     </div>
 
                   </div>
@@ -1999,68 +2042,58 @@ export default function HDLinkPage() {
                 </div>
 
                 <h3 className="mt-4 text-base font-bold">
-                  Please wait for admin approval
+                  Waiting for approval
                 </h3>
 
-                <p className="mt-2 text-xs leading-6 text-white/35">
+                <p className="mt-2 text-xs leading-6 text-white/30">
                   Your payment is being manually
-                  reviewed. Please keep this page open.
+                  reviewed. Keep this page open.
                 </p>
 
               </div>
 
               <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/30">
-
-                <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
 
                 {checkingApproval
-                  ? "Waiting for approval..."
-                  : "Checking payment status..."}
-
+                  ? "Checking approval..."
+                  : "Waiting..."}
               </div>
 
               <div className="mt-7 border-t border-white/10 pt-6">
-
-                <p className="text-xs leading-5 text-white/25">
-                  Once your payment is approved,
-                  your Premium access will activate
-                  automatically and you will be
-                  redirected to Premium.
+                <p className="text-xs leading-5 text-white/20">
+                  Once approved, your Premium
+                  access will activate automatically.
                 </p>
-
               </div>
 
             </div>
-
           </div>
-
         </div>
       )}
 
-      {/* FOOTER */}
+      {/* =====================================================
+          FOOTER
+      ===================================================== */}
 
-      <footer className="relative z-10 border-t border-white/10 px-5 py-10">
-
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-center sm:flex-row sm:text-left">
+      <footer className="relative z-10 border-t border-white/[0.07] px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 sm:flex-row sm:items-center">
 
           <div>
-
-            <div className="font-bold">
+            <div className="font-black">
               HDLink
             </div>
 
-            <div className="mt-1 text-xs text-white/25">
+            <div className="mt-1 text-[10px] text-white/25">
               Premium streaming access
             </div>
-
           </div>
 
-          <div className="text-xs text-white/25">
+          <div className="text-[10px] text-white/20">
             Secure payments • Manual verification
           </div>
 
         </div>
-
       </footer>
 
     </main>

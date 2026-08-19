@@ -6,57 +6,69 @@ import {
   useEffect,
   useState,
 } from "react";
-import {
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-function LoginPageContent() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const hdlink = searchParams.get("hdlink");
-  const planFromUrl = searchParams.get("plan");
+  const urlPlanId = searchParams.get("plan");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [checkingUser, setCheckingUser] = useState(true);
+
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const [savedPlan, setSavedPlan] = useState<string | null>(
-    planFromUrl
-  );
-
-  // ------------------------------------------------------------
-  // SAVE / RESTORE HDLINK PLAN
-  // ------------------------------------------------------------
+  // ============================================================
+  // CHECK EXISTING SESSION
+  // ============================================================
 
   useEffect(() => {
-    if (planFromUrl) {
-      localStorage.setItem(
-        "hdlink_pending_plan_id",
-        planFromUrl
-      );
+    async function checkSession() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      setSavedPlan(planFromUrl);
-      return;
+        if (session?.user) {
+          if (urlPlanId) {
+            localStorage.setItem(
+              "pending_plan_id",
+              urlPlanId
+            );
+
+            router.replace(
+              `/premium?plan=${encodeURIComponent(
+                urlPlanId
+              )}`
+            );
+          } else {
+            router.replace("/premium");
+          }
+
+          return;
+        }
+      } catch (err) {
+        console.error(
+          "Session check error:",
+          err
+        );
+      } finally {
+        setCheckingUser(false);
+      }
     }
 
-    const localPlan = localStorage.getItem(
-      "hdlink_pending_plan_id"
-    );
+    checkSession();
+  }, [router, urlPlanId]);
 
-    if (localPlan) {
-      setSavedPlan(localPlan);
-    }
-  }, [planFromUrl]);
-
-  // ------------------------------------------------------------
+  // ============================================================
   // LOGIN
-  // ------------------------------------------------------------
+  // ============================================================
 
   async function handleLogin(
     e: FormEvent<HTMLFormElement>
@@ -65,20 +77,36 @@ function LoginPageContent() {
 
     setError("");
     setMessage("");
+
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail) {
+      setError("Please enter your email.");
+      return;
+    }
+
+    if (!password) {
+      setError("Please enter your password.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const cleanEmail = email.trim();
+      // --------------------------------------------------------
+      // SAVE SELECTED PLAN
+      // --------------------------------------------------------
 
-      if (!cleanEmail) {
-        setError("Please enter your email.");
-        return;
+      if (urlPlanId) {
+        localStorage.setItem(
+          "pending_plan_id",
+          urlPlanId
+        );
       }
 
-      if (!password) {
-        setError("Please enter your password.");
-        return;
-      }
+      // --------------------------------------------------------
+      // SUPABASE LOGIN
+      // --------------------------------------------------------
 
       const {
         data,
@@ -89,7 +117,10 @@ function LoginPageContent() {
       });
 
       if (loginError) {
-        console.error("Login error:", loginError);
+        console.error(
+          "Gozy login error:",
+          loginError
+        );
 
         setError(
           loginError.message ||
@@ -103,44 +134,30 @@ function LoginPageContent() {
         setError(
           "Login failed. Please try again."
         );
+
         return;
       }
 
       // --------------------------------------------------------
-      // HDLINK FLOW
+      // LOGIN SUCCESS
       // --------------------------------------------------------
 
-      if (hdlink === "1") {
-        let planId =
-          planFromUrl ||
-          localStorage.getItem(
-            "hdlink_pending_plan_id"
-          );
+      setMessage("Login successful. Redirecting...");
 
-        if (planId) {
-          localStorage.setItem(
-            "hdlink_pending_plan_id",
-            planId
-          );
-
-          // Force full navigation so Supabase session
-          // is completely available on HDLink page.
-          window.location.href =
-            `/hdlink?plan=${encodeURIComponent(
-              planId
-            )}`;
-
-          return;
-        }
-
-        window.location.href = "/hdlink";
-        return;
+      if (urlPlanId) {
+        router.replace(
+          `/premium?plan=${encodeURIComponent(
+            urlPlanId
+          )}`
+        );
+      } else {
+        router.replace("/premium");
       }
-
-      // Normal login
-      window.location.href = "/";
     } catch (err) {
-      console.error("Unexpected login error:", err);
+      console.error(
+        "Login unexpected error:",
+        err
+      );
 
       setError(
         "Something went wrong. Please try again."
@@ -150,34 +167,23 @@ function LoginPageContent() {
     }
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // CREATE ACCOUNT
-  // ------------------------------------------------------------
+  // ============================================================
 
-  function handleCreateAccount() {
-    let planId =
-      planFromUrl ||
-      localStorage.getItem(
-        "hdlink_pending_plan_id"
-      );
+  function goToRegister() {
+    setError("");
 
-    if (planId) {
+    if (urlPlanId) {
       localStorage.setItem(
-        "hdlink_pending_plan_id",
-        planId
+        "pending_plan_id",
+        urlPlanId
       );
 
       window.location.href =
-        `/auth/register?hdlink=1&plan=${encodeURIComponent(
-          planId
+        `/auth/register?plan=${encodeURIComponent(
+          urlPlanId
         )}`;
-
-      return;
-    }
-
-    if (hdlink === "1") {
-      window.location.href =
-        "/auth/register?hdlink=1";
 
       return;
     }
@@ -186,9 +192,26 @@ function LoginPageContent() {
       "/auth/register";
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
+  // BACK TO HOME
+  // ============================================================
+
+  function goBack() {
+    if (urlPlanId) {
+      window.location.href =
+        `/?plan=${encodeURIComponent(
+          urlPlanId
+        )}`;
+
+      return;
+    }
+
+    window.location.href = "/";
+  }
+
+  // ============================================================
   // FORGOT PASSWORD
-  // ------------------------------------------------------------
+  // ============================================================
 
   async function handleForgotPassword() {
     setError("");
@@ -198,7 +221,7 @@ function LoginPageContent() {
 
     if (!cleanEmail) {
       setError(
-        "Enter your email first."
+        "Please enter your email first."
       );
       return;
     }
@@ -206,7 +229,7 @@ function LoginPageContent() {
     setLoading(true);
 
     try {
-      const { error } =
+      const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(
           cleanEmail,
           {
@@ -215,229 +238,321 @@ function LoginPageContent() {
           }
         );
 
-      if (error) {
-        setError(error.message);
+      if (resetError) {
+        setError(resetError.message);
         return;
       }
 
       setMessage(
-        "Password reset email sent. Check your inbox."
+        "Password reset link has been sent to your email."
       );
     } catch (err) {
-      console.error(err);
+      console.error(
+        "Password reset error:",
+        err
+      );
 
       setError(
-        "Could not send password reset email."
+        "Unable to send password reset email."
       );
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-1/2 top-[-250px] h-[600px] w-[800px] -translate-x-1/2 rounded-full bg-purple-500/[0.08] blur-[150px]" />
-      </div>
+  // ============================================================
+  // LOADING
+  // ============================================================
 
-      <div className="relative flex min-h-screen items-center justify-center px-5 py-10">
-        <div className="w-full max-w-md">
-
-          {/* LOGO */}
-
-          <div className="mb-8 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
-              H
-            </div>
-
-            <h1 className="mt-5 text-3xl font-black">
-              Welcome back
-            </h1>
-
-            <p className="mt-2 text-sm text-white/40">
-              Login to continue with your selected
-              HDLink plan.
-            </p>
+  if (checkingUser) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+            G
           </div>
 
-          {/* PLAN INFO */}
+          <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
-          {hdlink === "1" && savedPlan && (
-            <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-black">
+          <p className="mt-4 text-sm text-white/40">
+            Loading...
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  // ============================================================
+  // PAGE
+  // ============================================================
+
+  return (
+    <main className="min-h-screen overflow-hidden bg-[#080808] px-5 py-10 text-white">
+
+      {/* BACKGROUND */}
+
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+
+        <div className="absolute left-1/2 top-[-300px] h-[700px] w-[900px] -translate-x-1/2 rounded-full bg-white/[0.06] blur-[160px]" />
+
+        <div className="absolute right-[-250px] top-[300px] h-[500px] w-[500px] rounded-full bg-white/[0.025] blur-[140px]" />
+
+        <div className="absolute bottom-[-250px] left-[-200px] h-[500px] w-[500px] rounded-full bg-white/[0.02] blur-[140px]" />
+
+      </div>
+
+      <div className="relative mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
+
+        <div className="w-full">
+
+          {/* ================================================== */}
+          {/* LOGO */}
+          {/* ================================================== */}
+
+          <div className="mb-8 text-center">
+
+            <button
+              type="button"
+              onClick={goBack}
+              className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-white text-2xl font-black text-black shadow-2xl transition hover:scale-105"
+            >
+              G
+            </button>
+
+            <div className="mt-5 text-2xl font-black tracking-tight">
+              Gozy
+            </div>
+
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/30">
+              Premium Streaming
+            </div>
+
+          </div>
+
+          {/* ================================================== */}
+          {/* LOGIN CARD */}
+          {/* ================================================== */}
+
+          <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl sm:p-8">
+
+            {/* TITLE */}
+
+            <div>
+              <h1 className="text-3xl font-black tracking-tight">
+                Welcome back
+              </h1>
+
+              <p className="mt-2 text-sm leading-6 text-white/40">
+                Login to continue watching
+                premium videos on Gozy.
+              </p>
+            </div>
+
+            {/* PLAN MESSAGE */}
+
+            {urlPlanId && (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-black">
                   ✓
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-white/30">
-                    HDLink plan saved
+                  <div className="text-sm font-bold text-white/90">
+                    Plan selected
                   </div>
 
-                  <div className="mt-1 text-sm font-semibold text-white/80">
-                    Plan #{savedPlan}
+                  <div className="mt-0.5 text-xs text-white/35">
+                    Your selected plan will
+                    continue after login.
                   </div>
                 </div>
+
               </div>
-            </div>
-          )}
+            )}
 
-          {/* CARD */}
-
-          <div className="rounded-[30px] border border-white/10 bg-white/[0.04] p-6 shadow-2xl sm:p-8">
+            {/* ================================================= */}
+            {/* FORM */}
+            {/* ================================================= */}
 
             <form
               onSubmit={handleLogin}
-              className="space-y-5"
+              className="mt-7"
             >
 
               {/* EMAIL */}
 
-              <div>
-                <label
-                  htmlFor="email"
-                  className="mb-2 block text-sm font-semibold text-white/70"
-                >
-                  Email / Gmail
-                </label>
+              <label
+                htmlFor="login-email"
+                className="mb-2 block text-sm font-semibold text-white/70"
+              >
+                Email
+              </label>
 
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
-                  placeholder="you@gmail.com"
-                  disabled={loading}
-                  className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
-                />
-              </div>
+              <input
+                id="login-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
+                placeholder="you@gmail.com"
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-white/30 focus:bg-white/[0.02] disabled:opacity-50"
+              />
 
               {/* PASSWORD */}
 
-              <div>
-                <label
-                  htmlFor="password"
-                  className="mb-2 block text-sm font-semibold text-white/70"
-                >
-                  Password
-                </label>
+              <label
+                htmlFor="login-password"
+                className="mb-2 mt-5 block text-sm font-semibold text-white/70"
+              >
+                Password
+              </label>
 
-                <input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="Enter your password"
-                  disabled={loading}
-                  className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
-                />
-              </div>
+              <input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) =>
+                  setPassword(e.target.value)
+                }
+                placeholder="Enter your password"
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-white/30 focus:bg-white/[0.02] disabled:opacity-50"
+              />
 
               {/* ERROR */}
 
               {error && (
-                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
+                <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
                   {error}
                 </div>
               )}
 
-              {/* MESSAGE */}
+              {/* SUCCESS */}
 
               {message && (
-                <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm leading-6 text-green-300">
+                <div className="mt-5 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm leading-6 text-green-300">
                   {message}
                 </div>
               )}
 
-              {/* LOGIN */}
+              {/* LOGIN BUTTON */}
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-6 w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black shadow-xl transition hover:bg-white/90 hover:shadow-2xl active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading
                   ? "Logging in..."
-                  : "Login"}
+                  : "Login →"}
               </button>
 
             </form>
 
-            {/* FORGOT */}
+            {/* FORGOT PASSWORD */}
 
             <button
               type="button"
               onClick={handleForgotPassword}
               disabled={loading}
-              className="mt-5 w-full text-center text-xs font-semibold text-white/40 transition hover:text-white disabled:opacity-50"
+              className="mt-5 w-full text-center text-xs font-semibold text-white/35 transition hover:text-white/70 disabled:opacity-50"
             >
               Forgot password?
             </button>
 
-            {/* CREATE ACCOUNT */}
+            {/* DIVIDER */}
 
-            <div className="my-7 flex items-center gap-3">
+            <div className="my-7 flex items-center gap-4">
+
               <div className="h-px flex-1 bg-white/10" />
-              <span className="text-xs text-white/25">
+
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/20">
                 OR
               </span>
+
               <div className="h-px flex-1 bg-white/10" />
+
             </div>
 
-            <button
-              type="button"
-              onClick={handleCreateAccount}
-              disabled={loading}
-              className="w-full rounded-full border border-white/10 bg-white/[0.04] px-5 py-4 text-sm font-bold text-white transition hover:bg-white/[0.08] disabled:opacity-50"
-            >
-              Don't have an account?
-              <span className="ml-1 text-white">
-                Create your account →
+            {/* REGISTER */}
+
+            <div className="text-center">
+
+              <span className="text-sm text-white/35">
+                Don&apos;t have an account?
               </span>
-            </button>
+
+              <button
+                type="button"
+                onClick={goToRegister}
+                className="ml-2 text-sm font-black text-white transition hover:text-white/60"
+              >
+                Create account →
+              </button>
+
+            </div>
 
           </div>
 
+          {/* ================================================== */}
           {/* BACK */}
+          {/* ================================================== */}
 
           <button
             type="button"
-            onClick={() => {
-              if (hdlink === "1") {
-                window.location.href =
-                  "/hdlink";
-              } else {
-                window.location.href =
-                  "/";
-              }
-            }}
-            className="mt-6 w-full text-center text-xs text-white/30 transition hover:text-white"
+            onClick={goBack}
+            className="mx-auto mt-7 block text-xs font-semibold text-white/30 transition hover:text-white/70"
           >
-            ← Back
+            ← Back to Gozy
           </button>
 
+          {/* ================================================== */}
+          {/* FOOTER */}
+          {/* ================================================== */}
+
+          <div className="mt-8 text-center text-[10px] uppercase tracking-[0.2em] text-white/15">
+            Gozy • Premium Streaming
+          </div>
+
         </div>
+
       </div>
+
     </main>
   );
 }
+
+// ============================================================
+// SUSPENSE
+// ============================================================
 
 export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+        <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
+          <div className="text-center">
+
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+              G
+            </div>
+
+            <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+
+            <p className="mt-4 text-sm text-white/40">
+              Loading...
+            </p>
+
+          </div>
         </main>
       }
     >
-      <LoginPageContent />
+      <LoginForm />
     </Suspense>
   );
 }
