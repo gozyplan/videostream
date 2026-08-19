@@ -50,11 +50,9 @@ export default function HDLinkPage() {
 
   const [loading, setLoading] = useState(true);
   const [loadingPlans, setLoadingPlans] = useState(true);
-  const [loadingVideos, setLoadingVideos] =
-    useState(true);
+  const [loadingVideos, setLoadingVideos] = useState(true);
 
-  const [submitting, setSubmitting] =
-    useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const [paymentSubmitted, setPaymentSubmitted] =
     useState(false);
@@ -377,7 +375,9 @@ export default function HDLinkPage() {
         "hdlink_pending_plan_id"
       );
 
-    if (!savedPlanId) return;
+    if (!savedPlanId) {
+      return;
+    }
 
     const planId = Number(savedPlanId);
 
@@ -511,7 +511,9 @@ export default function HDLinkPage() {
   ========================================================= */
 
   function closePayment() {
-    if (submitting) return;
+    if (submitting) {
+      return;
+    }
 
     setSelectedPlan(null);
     setUtr("");
@@ -581,8 +583,10 @@ export default function HDLinkPage() {
       return;
     }
 
+    const paymentPlan: Plan = plan;
+
     if (!user) {
-      goToRegister(plan);
+      goToRegister(paymentPlan);
       return;
     }
 
@@ -643,7 +647,7 @@ export default function HDLinkPage() {
         .from("payment_requests")
         .insert({
           user_id: user.id,
-          plan_id: plan.id,
+          plan_id: paymentPlan.id,
           utr: transactionId,
           status: "pending",
           source: "hdlink",
@@ -678,7 +682,7 @@ export default function HDLinkPage() {
 
       localStorage.setItem(
         "hdlink_pending_plan_id",
-        String(plan.id)
+        String(paymentPlan.id)
       );
 
       setPaymentSubmitted(true);
@@ -702,23 +706,23 @@ export default function HDLinkPage() {
   ========================================================= */
 
   useEffect(() => {
-    /*
-     * IMPORTANT:
-     * Capture selectedPlan in a local constant.
-     * This prevents TypeScript from saying
-     * selectedPlan may be null inside async functions.
-     */
-
-    const plan = selectedPlan;
-    const currentUser = user;
-
     if (
       !paymentSubmitted ||
-      !currentUser ||
-      !plan
+      !user ||
+      !selectedPlan
     ) {
       return;
     }
+
+    /*
+     * IMPORTANT:
+     * Capture selectedPlan into a non-null variable.
+     * This fixes TypeScript TS18047.
+     */
+    const paymentPlan: Plan =
+      selectedPlan;
+
+    const currentUser = user;
 
     let stopped = false;
 
@@ -764,7 +768,7 @@ export default function HDLinkPage() {
               )
               .eq(
                 "plan_id",
-                plan.id
+                paymentPlan.id
               )
               .eq(
                 "source",
@@ -790,10 +794,7 @@ export default function HDLinkPage() {
           return;
         }
 
-        if (
-          !payment ||
-          stopped
-        ) {
+        if (!payment || stopped) {
           return;
         }
 
@@ -996,12 +997,9 @@ export default function HDLinkPage() {
             <button
               onClick={() =>
                 document
-                  .getElementById(
-                    "plans"
-                  )
+                  .getElementById("plans")
                   ?.scrollIntoView({
-                    behavior:
-                      "smooth",
+                    behavior: "smooth",
                   })
               }
               className="text-sm text-white/45 transition hover:text-white"
@@ -1012,12 +1010,9 @@ export default function HDLinkPage() {
             <button
               onClick={() =>
                 document
-                  .getElementById(
-                    "videos"
-                  )
+                  .getElementById("videos")
                   ?.scrollIntoView({
-                    behavior:
-                      "smooth",
+                    behavior: "smooth",
                   })
               }
               className="text-sm text-white/45 transition hover:text-white"
@@ -1028,12 +1023,9 @@ export default function HDLinkPage() {
             <button
               onClick={() =>
                 document
-                  .getElementById(
-                    "features"
-                  )
+                  .getElementById("features")
                   ?.scrollIntoView({
-                    behavior:
-                      "smooth",
+                    behavior: "smooth",
                   })
               }
               className="text-sm text-white/45 transition hover:text-white"
@@ -1058,12 +1050,9 @@ export default function HDLinkPage() {
               <button
                 onClick={() =>
                   document
-                    .getElementById(
-                      "plans"
-                    )
+                    .getElementById("plans")
                     ?.scrollIntoView({
-                      behavior:
-                        "smooth",
+                      behavior: "smooth",
                     })
                 }
                 className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black transition hover:bg-white/90 sm:px-5"
@@ -1084,12 +1073,9 @@ export default function HDLinkPage() {
                 <button
                   onClick={() =>
                     document
-                      .getElementById(
-                        "plans"
-                      )
+                      .getElementById("plans")
                       ?.scrollIntoView({
-                        behavior:
-                          "smooth",
+                        behavior: "smooth",
                       })
                   }
                   className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black transition hover:bg-white/90 sm:px-5"
@@ -1133,12 +1119,9 @@ export default function HDLinkPage() {
                 <button
                   onClick={() =>
                     document
-                      .getElementById(
-                        "plans"
-                      )
+                      .getElementById("plans")
                       ?.scrollIntoView({
-                        behavior:
-                          "smooth",
+                        behavior: "smooth",
                       })
                   }
                   className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02]"
@@ -1149,12 +1132,9 @@ export default function HDLinkPage() {
                 <button
                   onClick={() =>
                     document
-                      .getElementById(
-                        "videos"
-                      )
+                      .getElementById("videos")
                       ?.scrollIntoView({
-                        behavior:
-                          "smooth",
+                        behavior: "smooth",
                       })
                   }
                   className="rounded-full border border-white/10 bg-white/[0.04] px-7 py-4 text-sm font-bold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
@@ -1222,6 +1202,7 @@ export default function HDLinkPage() {
                       </div>
                     </div>
                   </div>
+
                 </div>
               </div>
             </div>
@@ -1254,12 +1235,11 @@ export default function HDLinkPage() {
             </p>
           </div>
 
-          {error &&
-            !selectedPlan && (
-              <div className="mx-auto mt-7 max-w-xl rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-center text-sm text-red-300">
-                {error}
-              </div>
-            )}
+          {error && !selectedPlan && (
+            <div className="mx-auto mt-7 max-w-xl rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-center text-sm text-red-300">
+              {error}
+            </div>
+          )}
 
           <div className="mt-10 grid gap-5 md:grid-cols-3">
 
@@ -1275,16 +1255,13 @@ export default function HDLinkPage() {
             ) : plans.length > 0 ? (
               plans.map((plan) => {
                 const popular =
-                  plan.duration_days ===
-                  15;
+                  plan.duration_days === 15;
 
                 const oneDay =
-                  plan.duration_days ===
-                  1;
+                  plan.duration_days === 1;
 
                 const thirtyDay =
-                  plan.duration_days ===
-                  30;
+                  plan.duration_days === 30;
 
                 return (
                   <div
@@ -1326,8 +1303,7 @@ export default function HDLinkPage() {
 
                     <div className="mt-1 text-xs text-white/35">
                       {plan.duration_days} day
-                      {plan.duration_days !==
-                      1
+                      {plan.duration_days !== 1
                         ? "s"
                         : ""}{" "}
                       premium access
@@ -1336,6 +1312,7 @@ export default function HDLinkPage() {
                     <div className="my-6 h-px bg-white/10" />
 
                     <div className="space-y-3 text-xs text-white/50">
+
                       <div className="flex gap-2">
                         <span className="text-emerald-400">
                           ✓
@@ -1356,13 +1333,12 @@ export default function HDLinkPage() {
                         </span>
                         Manual payment verification
                       </div>
+
                     </div>
 
                     <button
                       onClick={() =>
-                        selectPlan(
-                          plan
-                        )
+                        selectPlan(plan)
                       }
                       className={`mt-7 w-full rounded-full px-5 py-4 text-sm font-black transition ${
                         popular
@@ -1378,6 +1354,7 @@ export default function HDLinkPage() {
                         {plan.description}
                       </p>
                     )}
+
                   </div>
                 );
               })
@@ -1402,15 +1379,14 @@ export default function HDLinkPage() {
                 ].map(
                   (fallback, index) => (
                     <div
-                      key={
-                        fallback.days
-                      }
+                      key={fallback.days}
                       className={`rounded-[28px] border p-7 ${
                         index === 1
                           ? "border-white/30 bg-white/[0.09]"
                           : "border-white/10 bg-white/[0.035]"
                       }`}
                     >
+
                       <div className="text-xs font-bold text-white/35">
                         {index === 1
                           ? "⭐ MOST POPULAR"
@@ -1418,16 +1394,11 @@ export default function HDLinkPage() {
                       </div>
 
                       <div className="mt-7 text-5xl font-black">
-                        ₹
-                        {
-                          fallback.price
-                        }
+                        ₹{fallback.price}
                       </div>
 
                       <div className="mt-3 text-lg font-bold">
-                        {
-                          fallback.name
-                        }
+                        {fallback.name}
                       </div>
 
                       <div className="mt-1 text-xs text-white/35">
@@ -1444,6 +1415,7 @@ export default function HDLinkPage() {
                       >
                         Get Access →
                       </button>
+
                     </div>
                   )
                 )}
@@ -1526,6 +1498,7 @@ export default function HDLinkPage() {
         <div className="mx-auto max-w-7xl">
 
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30">
                 Premium library
@@ -1549,12 +1522,9 @@ export default function HDLinkPage() {
                   );
                 } else {
                   document
-                    .getElementById(
-                      "plans"
-                    )
+                    .getElementById("plans")
                     ?.scrollIntoView({
-                      behavior:
-                        "smooth",
+                      behavior: "smooth",
                     });
                 }
               }}
@@ -1564,6 +1534,7 @@ export default function HDLinkPage() {
                 ? "Open Premium →"
                 : "Unlock Library →"}
             </button>
+
           </div>
 
           <div className="mt-9">
@@ -1588,6 +1559,7 @@ export default function HDLinkPage() {
               </div>
             ) : videos.length === 0 ? (
               <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-12 text-center">
+
                 <div className="text-4xl">
                   🎬
                 </div>
@@ -1600,14 +1572,13 @@ export default function HDLinkPage() {
                   Video previews are
                   currently unavailable.
                 </p>
+
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+
                 {videos.map(
-                  (
-                    video,
-                    index
-                  ) => (
+                  (video, index) => (
                     <button
                       key={String(
                         video.id
@@ -1619,6 +1590,7 @@ export default function HDLinkPage() {
                       }
                       className="group text-left"
                     >
+
                       <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] transition duration-300 group-hover:-translate-y-1 group-hover:border-white/20">
 
                         <div className="relative aspect-video overflow-hidden bg-[#111]">
@@ -1631,8 +1603,7 @@ export default function HDLinkPage() {
                               alt={
                                 video.title ||
                                 `Premium Video ${
-                                  index +
-                                  1
+                                  index + 1
                                 }`
                               }
                               className={`h-full w-full object-cover transition duration-500 ${
@@ -1674,18 +1645,20 @@ export default function HDLinkPage() {
                               )}
                             </div>
                           )}
+
                         </div>
 
                         <div className="p-4">
+
                           <h3 className="line-clamp-2 text-sm font-bold leading-5 text-white/90">
                             {video.title ||
                               `Premium Video ${
-                                index +
-                                1
+                                index + 1
                               }`}
                           </h3>
 
                           <div className="mt-3 flex items-center justify-between">
+
                             <span className="text-[10px] text-white/25">
                               HDLink Premium
                             </span>
@@ -1695,13 +1668,17 @@ export default function HDLinkPage() {
                                 ? "Watch →"
                                 : "Unlock →"}
                             </span>
+
                           </div>
+
                         </div>
 
                       </div>
+
                     </button>
                   )
                 )}
+
               </div>
             )}
 
@@ -1728,6 +1705,7 @@ export default function HDLinkPage() {
           </div>
 
           <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
             {features.map(
               (feature) => (
                 <div
@@ -1736,26 +1714,23 @@ export default function HDLinkPage() {
                   }
                   className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:bg-white/[0.05]"
                 >
+
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.08] text-lg">
-                    {
-                      feature.icon
-                    }
+                    {feature.icon}
                   </div>
 
                   <h3 className="mt-5 text-sm font-bold">
-                    {
-                      feature.title
-                    }
+                    {feature.title}
                   </h3>
 
                   <p className="mt-2 text-xs leading-6 text-white/35">
-                    {
-                      feature.text
-                    }
+                    {feature.text}
                   </p>
+
                 </div>
               )
             )}
+
           </div>
         </div>
       </section>
@@ -1789,12 +1764,9 @@ export default function HDLinkPage() {
               <button
                 onClick={() =>
                   document
-                    .getElementById(
-                      "plans"
-                    )
+                    .getElementById("plans")
                     ?.scrollIntoView({
-                      behavior:
-                        "smooth",
+                      behavior: "smooth",
                     })
                 }
                 className="rounded-full bg-white px-7 py-4 text-sm font-black text-black transition hover:bg-white/90"
@@ -1831,9 +1803,7 @@ export default function HDLinkPage() {
                   <p className="mt-1 text-sm text-white/35">
                     ₹{selectedPlan.price}{" "}
                     •{" "}
-                    {
-                      selectedPlan.duration_days
-                    }{" "}
+                    {selectedPlan.duration_days}{" "}
                     days
                   </p>
                 </div>
@@ -1852,8 +1822,6 @@ export default function HDLinkPage() {
 
               </div>
 
-              {/* PLAN SUMMARY */}
-
               <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-center justify-between">
 
@@ -1863,23 +1831,16 @@ export default function HDLinkPage() {
                     </div>
 
                     <div className="mt-1 text-sm font-bold">
-                      {
-                        selectedPlan.name
-                      }
+                      {selectedPlan.name}
                     </div>
                   </div>
 
                   <div className="text-2xl font-black">
-                    ₹
-                    {
-                      selectedPlan.price
-                    }
+                    ₹{selectedPlan.price}
                   </div>
 
                 </div>
               </div>
-
-              {/* QR */}
 
               <div className="mt-5 rounded-3xl bg-white p-4">
                 <img
@@ -1892,14 +1853,9 @@ export default function HDLinkPage() {
               <div className="mt-3 text-center text-xs text-white/30">
                 Scan QR and pay exactly{" "}
                 <span className="font-bold text-white/60">
-                  ₹
-                  {
-                    selectedPlan.price
-                  }
+                  ₹{selectedPlan.price}
                 </span>
               </div>
-
-              {/* FORM */}
 
               <form
                 onSubmit={
@@ -1907,6 +1863,7 @@ export default function HDLinkPage() {
                 }
                 className="mt-6"
               >
+
                 <label
                   htmlFor="hdlink-utr"
                   className="mb-2 block text-sm font-bold text-white/70"
@@ -1947,6 +1904,7 @@ export default function HDLinkPage() {
                     ? "Submitting..."
                     : "Submit Payment Request"}
                 </button>
+
               </form>
 
               <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-[11px] leading-5 text-white/30">
@@ -2004,22 +1962,19 @@ export default function HDLinkPage() {
                   <div className="flex items-center justify-between">
 
                     <div className="text-left">
+
                       <div className="text-[9px] uppercase tracking-wider text-white/25">
                         Selected Plan
                       </div>
 
                       <div className="mt-1 text-sm font-bold">
-                        {
-                          selectedPlan.name
-                        }
+                        {selectedPlan.name}
                       </div>
+
                     </div>
 
                     <div className="text-xl font-black">
-                      ₹
-                      {
-                        selectedPlan.price
-                      }
+                      ₹{selectedPlan.price}
                     </div>
 
                   </div>
@@ -2047,18 +2002,22 @@ export default function HDLinkPage() {
               </div>
 
               <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/30">
+
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
 
                 {checkingApproval
                   ? "Checking approval..."
                   : "Waiting..."}
+
               </div>
 
               <div className="mt-7 border-t border-white/10 pt-6">
+
                 <p className="text-xs leading-5 text-white/20">
                   Once approved, your Premium
                   access will activate automatically.
                 </p>
+
               </div>
 
             </div>
