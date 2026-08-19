@@ -702,10 +702,20 @@ export default function HDLinkPage() {
   ========================================================= */
 
   useEffect(() => {
+    /*
+     * IMPORTANT:
+     * Capture selectedPlan in a local constant.
+     * This prevents TypeScript from saying
+     * selectedPlan may be null inside async functions.
+     */
+
+    const plan = selectedPlan;
+    const currentUser = user;
+
     if (
       !paymentSubmitted ||
-      !user ||
-      !selectedPlan
+      !currentUser ||
+      !plan
     ) {
       return;
     }
@@ -736,7 +746,7 @@ export default function HDLinkPage() {
               )
               .eq(
                 "user_id",
-                user.id
+                currentUser.id
               )
               .maybeSingle();
         } else {
@@ -750,11 +760,11 @@ export default function HDLinkPage() {
               )
               .eq(
                 "user_id",
-                user.id
+                currentUser.id
               )
               .eq(
                 "plan_id",
-                selectedPlan.id
+                plan.id
               )
               .eq(
                 "source",
@@ -780,7 +790,10 @@ export default function HDLinkPage() {
           return;
         }
 
-        if (!payment || stopped) {
+        if (
+          !payment ||
+          stopped
+        ) {
           return;
         }
 
@@ -792,7 +805,7 @@ export default function HDLinkPage() {
         ) {
           const activeSubscription =
             await loadSubscription(
-              user.id
+              currentUser.id
             );
 
           if (
@@ -859,6 +872,7 @@ export default function HDLinkPage() {
 
     return () => {
       stopped = true;
+
       window.clearInterval(
         interval
       );
@@ -949,9 +963,7 @@ export default function HDLinkPage() {
         <div className="absolute bottom-[-300px] left-[-250px] h-[600px] w-[600px] rounded-full bg-fuchsia-600/[0.05] blur-[150px]" />
       </div>
 
-      {/* =====================================================
-          NAVBAR
-      ===================================================== */}
+      {/* NAVBAR */}
 
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#070707]/80 backdrop-blur-2xl">
         <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -1090,9 +1102,7 @@ export default function HDLinkPage() {
         </div>
       </header>
 
-      {/* =====================================================
-          HERO
-      ===================================================== */}
+      {/* HERO */}
 
       <section className="relative z-10 px-4 pb-10 pt-14 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8">
         <div className="mx-auto max-w-7xl">
@@ -1220,9 +1230,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          PLANS
-      ===================================================== */}
+      {/* PLANS */}
 
       <section
         id="plans"
@@ -1375,8 +1383,6 @@ export default function HDLinkPage() {
               })
             ) : (
               <>
-                {/* FALLBACK DISPLAY */}
-
                 {[
                   {
                     name: "1 Day",
@@ -1455,9 +1461,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          HOW IT WORKS
-      ===================================================== */}
+      {/* HOW IT WORKS */}
 
       <section className="relative z-10 border-y border-white/[0.07] bg-white/[0.015] px-4 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
@@ -1513,9 +1517,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          VIDEOS
-      ===================================================== */}
+      {/* VIDEOS */}
 
       <section
         id="videos"
@@ -1707,9 +1709,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          FEATURES
-      ===================================================== */}
+      {/* FEATURES */}
 
       <section
         id="features"
@@ -1760,9 +1760,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          FINAL CTA
-      ===================================================== */}
+      {/* FINAL CTA */}
 
       <section className="relative z-10 px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
@@ -1810,9 +1808,7 @@ export default function HDLinkPage() {
         </div>
       </section>
 
-      {/* =====================================================
-          PAYMENT MODAL
-      ===================================================== */}
+      {/* PAYMENT MODAL */}
 
       {selectedPlan &&
         user &&
@@ -1963,9 +1959,7 @@ export default function HDLinkPage() {
           </div>
         )}
 
-      {/* =====================================================
-          PAYMENT WAITING
-      ===================================================== */}
+      {/* PAYMENT WAITING */}
 
       {paymentSubmitted && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-5 backdrop-blur-2xl">
@@ -2072,9 +2066,7 @@ export default function HDLinkPage() {
         </div>
       )}
 
-      {/* =====================================================
-          FOOTER
-      ===================================================== */}
+      {/* FOOTER */}
 
       <footer className="relative z-10 border-t border-white/[0.07] px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 sm:flex-row sm:items-center">
