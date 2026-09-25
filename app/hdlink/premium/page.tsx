@@ -19,6 +19,9 @@ type Subscription = {
   expires_at: string;
 };
 
+const TELEGRAM_CHANNEL_URL =
+  "https://t.me/+cbNYXxM7PhAxZDJl";
+
 export default function HDLinkPremiumPage() {
   const router = useRouter();
 
@@ -43,6 +46,10 @@ export default function HDLinkPremiumPage() {
     initialize();
   }, []);
 
+  // ============================================================
+  // INITIALIZE
+  // ============================================================
+
   async function initialize() {
     setLoading(true);
     setError("");
@@ -53,17 +60,14 @@ export default function HDLinkPremiumPage() {
       } = await supabase.auth.getUser();
 
       if (!currentUser) {
-        window.location.href =
-          "/hdlink/auth/login";
+        window.location.href = "/hdlink/auth/login";
         return;
       }
 
       setUser(currentUser);
 
       const activeSubscription =
-        await loadSubscription(
-          currentUser.id
-        );
+        await loadSubscription(currentUser.id);
 
       if (!activeSubscription) {
         router.replace("/hdlink");
@@ -85,11 +89,12 @@ export default function HDLinkPremiumPage() {
     }
   }
 
-  async function loadSubscription(
-    userId: string
-  ) {
-    const now =
-      new Date().toISOString();
+  // ============================================================
+  // LOAD HDLINK SUBSCRIPTION
+  // ============================================================
+
+  async function loadSubscription(userId: string) {
+    const now = new Date().toISOString();
 
     const {
       data,
@@ -97,10 +102,19 @@ export default function HDLinkPremiumPage() {
     } = await supabase
       .from("subscriptions")
       .select(
-        "id,plan_id,status,expires_at"
+        `
+        id,
+        plan_id,
+        status,
+        expires_at,
+        plans!inner (
+          source
+        )
+      `
       )
       .eq("user_id", userId)
       .eq("status", "active")
+      .eq("plans.source", "hdlink")
       .gt("expires_at", now)
       .order("expires_at", {
         ascending: false,
@@ -119,10 +133,26 @@ export default function HDLinkPremiumPage() {
       return null;
     }
 
-    setSubscription(data);
+    if (!data) {
+      setSubscription(null);
+      return null;
+    }
 
-    return data;
+    const subscriptionData: Subscription = {
+      id: data.id,
+      plan_id: data.plan_id,
+      status: data.status,
+      expires_at: data.expires_at,
+    };
+
+    setSubscription(subscriptionData);
+
+    return subscriptionData;
   }
+
+  // ============================================================
+  // LOAD VIDEOS
+  // ============================================================
 
   async function loadVideos() {
     setLoadingVideos(true);
@@ -137,8 +167,7 @@ export default function HDLinkPremiumPage() {
         }
       );
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -161,20 +190,6 @@ export default function HDLinkPremiumPage() {
         loadedVideos = data.items;
       }
 
-      /*
-       * IMPORTANT
-       *
-       * पहले यहाँ:
-       *
-       * loadedVideos.slice(0, 8)
-       *
-       * था।
-       *
-       * इसलिए केवल 8 videos दिखाई दे रही थीं।
-       *
-       * अब पूरी API library दिखाई जाएगी।
-       */
-
       setVideos(loadedVideos);
     } catch (err) {
       console.error(
@@ -192,6 +207,10 @@ export default function HDLinkPremiumPage() {
     }
   }
 
+  // ============================================================
+  // LOGOUT
+  // ============================================================
+
   async function handleLogout() {
     await supabase.auth.signOut();
 
@@ -203,9 +222,12 @@ export default function HDLinkPremiumPage() {
       "hdlink_pending_payment_id"
     );
 
-    window.location.href =
-      "/hdlink";
+    window.location.href = "/hdlink";
   }
+
+  // ============================================================
+  // OPEN VIDEO
+  // ============================================================
 
   function openVideo(video: Video) {
     if (!video.video_url) {
@@ -220,16 +242,22 @@ export default function HDLinkPremiumPage() {
 
     setSelectedVideo(video);
 
-    document.body.style.overflow =
-      "hidden";
+    document.body.style.overflow = "hidden";
   }
+
+  // ============================================================
+  // CLOSE VIDEO
+  // ============================================================
 
   function closeVideo() {
     setSelectedVideo(null);
 
-    document.body.style.overflow =
-      "";
+    document.body.style.overflow = "";
   }
+
+  // ============================================================
+  // FORMAT VIDEO DURATION
+  // ============================================================
 
   function formatDuration(
     duration?: string | number
@@ -242,8 +270,7 @@ export default function HDLinkPremiumPage() {
       return "";
     }
 
-    const seconds =
-      Number(duration);
+    const seconds = Number(duration);
 
     if (
       Number.isNaN(seconds) ||
@@ -252,16 +279,15 @@ export default function HDLinkPremiumPage() {
       return String(duration);
     }
 
-    const hours =
-      Math.floor(seconds / 3600);
+    const hours = Math.floor(seconds / 3600);
 
-    const minutes =
-      Math.floor(
-        (seconds % 3600) / 60
-      );
+    const minutes = Math.floor(
+      (seconds % 3600) / 60
+    );
 
-    const remainingSeconds =
-      Math.floor(seconds % 60);
+    const remainingSeconds = Math.floor(
+      seconds % 60
+    );
 
     if (hours > 0) {
       return `${hours}:${String(
@@ -276,24 +302,25 @@ export default function HDLinkPremiumPage() {
     ).padStart(2, "0")}`;
   }
 
+  // ============================================================
+  // PREMIUM STATUS
+  // ============================================================
+
   const isPremium =
     !!subscription &&
-    subscription.status ===
-      "active" &&
+    subscription.status === "active" &&
     new Date(
       subscription.expires_at
     ).getTime() > Date.now();
 
-  /*
-   * PAGE LOADING
-   */
+  // ============================================================
+  // PAGE LOADING
+  // ============================================================
 
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
-
         <div className="text-center">
-
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
             H
           </div>
@@ -303,23 +330,19 @@ export default function HDLinkPremiumPage() {
           <p className="mt-4 text-sm text-white/40">
             Loading HDLink Premium...
           </p>
-
         </div>
-
       </main>
     );
   }
 
-  /*
-   * PREMIUM ACCESS REQUIRED
-   */
+  // ============================================================
+  // PREMIUM ACCESS REQUIRED
+  // ============================================================
 
   if (!isPremium) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050505] px-5 text-white">
-
         <div className="w-full max-w-md rounded-[30px] border border-white/10 bg-white/[0.04] p-8 text-center">
-
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black">
             H
           </div>
@@ -333,58 +356,51 @@ export default function HDLinkPremiumPage() {
           </p>
 
           <button
-            onClick={() =>
-              router.push("/hdlink")
-            }
+            onClick={() => router.push("/hdlink")}
             className="mt-7 w-full rounded-full bg-white px-6 py-4 text-sm font-black text-black transition hover:bg-white/85"
           >
             Get Premium →
           </button>
-
         </div>
-
       </main>
     );
   }
 
+  // ============================================================
+  // MAIN PREMIUM PAGE
+  // ============================================================
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#050505] text-white">
 
-      {/* ====================================================== */}
-      {/* BACKGROUND */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          BACKGROUND
+      ====================================================== */}
 
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-
         <div className="absolute left-1/2 top-[-300px] h-[700px] w-[900px] -translate-x-1/2 rounded-full bg-purple-500/[0.08] blur-[160px]" />
 
         <div className="absolute right-[-200px] top-[500px] h-[500px] w-[500px] rounded-full bg-blue-500/[0.05] blur-[140px]" />
 
         <div className="absolute bottom-[-250px] left-[-200px] h-[500px] w-[500px] rounded-full bg-pink-500/[0.04] blur-[140px]" />
-
       </div>
 
-      {/* ====================================================== */}
-      {/* NAVBAR */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          NAVBAR
+      ====================================================== */}
 
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#050505]/75 backdrop-blur-2xl">
-
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
 
           <button
-            onClick={() =>
-              router.push("/hdlink")
-            }
+            onClick={() => router.push("/hdlink")}
             className="flex items-center gap-3"
           >
-
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg font-black text-black">
               H
             </div>
 
             <div className="text-left">
-
               <div className="text-lg font-black">
                 HDLink
               </div>
@@ -392,9 +408,7 @@ export default function HDLinkPremiumPage() {
               <div className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">
                 Premium
               </div>
-
             </div>
-
           </button>
 
           <div className="flex items-center gap-3">
@@ -411,17 +425,14 @@ export default function HDLinkPremiumPage() {
             </button>
 
           </div>
-
         </div>
-
       </header>
 
-      {/* ====================================================== */}
-      {/* HERO */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          HERO
+      ====================================================== */}
 
-      <section className="relative z-10 px-5 pb-16 pt-16 sm:pb-20 sm:pt-24">
-
+      <section className="relative z-10 px-5 pb-10 pt-16 sm:pb-14 sm:pt-24">
         <div className="mx-auto max-w-7xl">
 
           <div className="grid items-center gap-10 lg:grid-cols-[1fr_auto]">
@@ -429,36 +440,29 @@ export default function HDLinkPremiumPage() {
             <div>
 
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/[0.06] px-4 py-2 text-xs font-semibold text-green-300">
-
                 <span className="h-2 w-2 rounded-full bg-green-400" />
-
                 Premium Access Active
-
               </div>
 
               <h1 className="max-w-4xl text-5xl font-black tracking-[-0.04em] sm:text-6xl lg:text-7xl">
-
                 Welcome to
-
                 <br />
-
                 <span className="text-white/40">
                   HDLink Premium.
                 </span>
-
               </h1>
 
               <p className="mt-6 max-w-2xl text-base leading-7 text-white/45 sm:text-lg">
                 Your premium access is active.
-                Explore the protected HDLink video
-                library and start watching.
+                Join our official Telegram channel
+                to get access to the latest updates
+                and premium content.
               </p>
 
               {subscription && (
                 <div className="mt-8 flex flex-wrap gap-3">
 
                   <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
-
                     <div className="text-[10px] uppercase tracking-wider text-white/30">
                       Access Status
                     </div>
@@ -466,11 +470,9 @@ export default function HDLinkPremiumPage() {
                     <div className="mt-1 text-sm font-bold text-green-300">
                       Active
                     </div>
-
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
-
                     <div className="text-[10px] uppercase tracking-wider text-white/30">
                       Expires
                     </div>
@@ -487,7 +489,6 @@ export default function HDLinkPremiumPage() {
                         }
                       )}
                     </div>
-
                   </div>
 
                 </div>
@@ -496,7 +497,6 @@ export default function HDLinkPremiumPage() {
             </div>
 
             <div className="hidden lg:block">
-
               <div className="relative">
 
                 <div className="absolute -inset-5 rounded-full bg-purple-500/[0.08] blur-3xl" />
@@ -510,18 +510,68 @@ export default function HDLinkPremiumPage() {
                 </div>
 
               </div>
+            </div>
+
+          </div>
+
+          {/* ==================================================
+              TELEGRAM JOIN BUTTON
+          ================================================== */}
+
+          <div className="mt-12 max-w-2xl">
+
+            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-gradient-to-br from-sky-500/[0.12] via-white/[0.04] to-transparent p-6 shadow-2xl sm:p-8">
+
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+
+                <div className="flex items-center gap-4">
+
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#229ED9] text-2xl shadow-lg">
+                    ✈️
+                  </div>
+
+                  <div>
+
+                    <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300/70">
+                      Premium Community
+                    </div>
+
+                    <h2 className="mt-1 text-xl font-black">
+                      Join Our Telegram Channel
+                    </h2>
+
+                    <p className="mt-1 text-sm text-white/40">
+                      Click below to join the official channel.
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <a
+                  href={TELEGRAM_CHANNEL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#229ED9] px-7 py-4 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#168dcc] hover:shadow-xl active:scale-[0.98]"
+                >
+                  Join Telegram
+                  <span className="text-lg">
+                    →
+                  </span>
+                </a>
+
+              </div>
 
             </div>
 
           </div>
 
         </div>
-
       </section>
 
-      {/* ====================================================== */}
-      {/* VIDEO LIBRARY */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          VIDEO LIBRARY
+      ====================================================== */}
 
       <section className="relative z-10 border-t border-white/10 px-5 py-20 sm:py-24">
 
@@ -574,9 +624,9 @@ export default function HDLinkPremiumPage() {
 
           <div className="mt-10">
 
-            {/* ================================================= */}
-            {/* VIDEO LOADING */}
-            {/* ================================================= */}
+            {/* =================================================
+                VIDEO LOADING
+            ================================================= */}
 
             {loadingVideos ? (
 
@@ -636,16 +686,6 @@ export default function HDLinkPremiumPage() {
 
             ) : (
 
-              /*
-               * IMPORTANT:
-               *
-               * यहाँ videos.map() है।
-               * कोई slice(0, 8) नहीं है।
-               *
-               * API जितनी videos भेजेगी,
-               * उतनी सभी दिखाई देंगी।
-               */
-
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
 
                 {videos.map(
@@ -699,12 +739,9 @@ export default function HDLinkPremiumPage() {
                             Premium
                           </div>
 
-                          {video.duration !==
-                            undefined &&
-                            video.duration !==
-                              null &&
-                            video.duration !==
-                              "" && (
+                          {video.duration !== undefined &&
+                            video.duration !== null &&
+                            video.duration !== "" && (
 
                               <div className="absolute bottom-3 right-3 rounded-md bg-black/80 px-2 py-1 text-[10px] font-semibold text-white">
                                 {formatDuration(
@@ -775,9 +812,47 @@ export default function HDLinkPremiumPage() {
 
       </section>
 
-      {/* ====================================================== */}
-      {/* ACCOUNT */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          TELEGRAM SECOND BUTTON
+      ====================================================== */}
+
+      <section className="relative z-10 px-5 py-10">
+
+        <div className="mx-auto max-w-7xl">
+
+          <div className="rounded-[32px] border border-sky-400/20 bg-sky-400/[0.05] p-8 text-center sm:p-10">
+
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#229ED9] text-2xl">
+              ✈️
+            </div>
+
+            <h2 className="mt-5 text-2xl font-black">
+              Join HDLink Telegram
+            </h2>
+
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/40">
+              Stay connected with HDLink and get
+              premium updates directly on Telegram.
+            </p>
+
+            <a
+              href={TELEGRAM_CHANNEL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-[#229ED9] px-8 py-4 text-sm font-black text-white transition hover:bg-[#168dcc] active:scale-[0.98]"
+            >
+              ✈️ Join Telegram Channel →
+            </a>
+
+          </div>
+
+        </div>
+
+      </section>
+
+      {/* ======================================================
+          ACCOUNT
+      ====================================================== */}
 
       <section className="relative z-10 px-5 py-10">
 
@@ -820,9 +895,9 @@ export default function HDLinkPremiumPage() {
 
       </section>
 
-      {/* ====================================================== */}
-      {/* FOOTER */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          FOOTER
+      ====================================================== */}
 
       <footer className="relative z-10 border-t border-white/10 px-5 py-10">
 
@@ -848,9 +923,9 @@ export default function HDLinkPremiumPage() {
 
       </footer>
 
-      {/* ====================================================== */}
-      {/* VIDEO PLAYER MODAL */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          VIDEO PLAYER MODAL
+      ====================================================== */}
 
       {selectedVideo && (
 
@@ -884,18 +959,14 @@ export default function HDLinkPremiumPage() {
 
                 <iframe
                   src={`${selectedVideo.video_url}${
-                    selectedVideo.video_url?.includes(
-                      "?"
-                    )
+                    selectedVideo.video_url?.includes("?")
                       ? "&"
                       : "?"
                   }autoplay=true&responsive=true`}
                   className="h-full w-full"
                   allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
                   allowFullScreen
-                  title={
-                    selectedVideo.title
-                  }
+                  title={selectedVideo.title}
                   style={{
                     border: "none",
                   }}
