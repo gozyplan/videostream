@@ -1,1941 +1,1845 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Plan = {
   id: number;
   name: string;
-  duration_days: number;
   price: number;
+  duration_days: number;
   description?: string | null;
   is_active: boolean;
   source?: string | null;
 };
 
 type Video = {
-  id: string;
+  id: string | number;
   title: string;
-  thumbnail_url: string;
-  video_url: string;
-  duration: number;
+  thumbnail_url?: string;
+  video_url?: string;
+  duration?: string | number;
 };
 
-type PaymentRequest = {
-  id: number;
-  plan_id: number;
-  status: string;
-  utr: string;
-  created_at: string;
+type User = {
+  id: string;
+  email?: string | null;
 };
 
-export default function Home() {
-  const [menuOpen, setMenuOpen] = useState(false);
+const TELEGRAM_URL =
+  "https://t.me/+IVAeTBOoSMdhZTQ1";
 
+const WHATSAPP_URL =
+  "https://whatsapp.com/channel/0029VavGkVeCsU9MFBcyX91V";
+
+const PLAN_CONFIG = [
+  {
+    key: "day",
+    price: 210,
+    duration: 1,
+    title: "1 Day",
+    subtitle: "Quick Access",
+    badge: "QUICK ACCESS",
+  },
+  {
+    key: "three-months",
+    price: 550,
+    duration: 90,
+    title: "3 Months",
+    subtitle: "90 Days Premium",
+    badge: "MOST POPULAR",
+  },
+  {
+    key: "lifetime",
+    price: 850,
+    duration: null,
+    title: "Lifetime Access",
+    subtitle: "Unlimited Access",
+    badge: "VIP • LIFETIME",
+  },
+] as const;
+
+export default function HDLinkHomePage() {
+  return (
+    <Suspense fallback={null}>
+      <HDLinkPage />
+    </Suspense>
+  );
+}
+
+function HDLinkPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlPlanId = searchParams.get("plan");
+
+  const [user, setUser] = useState<User | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(true);
-  const [plansError, setPlansError] = useState("");
-
   const [videos, setVideos] = useState<Video[]>([]);
-  const [loadingVideos, setLoadingVideos] = useState(true);
-
-  const [userLoggedIn, setUserLoggedIn] = useState(false);
-  const [hasActiveSubscription, setHasActiveSubscription] =
-    useState(false);
-  const [checkingSubscription, setCheckingSubscription] =
-    useState(true);
 
   const [selectedPlan, setSelectedPlan] =
     useState<Plan | null>(null);
 
   const [utr, setUtr] = useState("");
-  const [submittingPayment, setSubmittingPayment] =
+
+  const [loadingVideos, setLoadingVideos] =
+    useState(true);
+
+  const [submitting, setSubmitting] =
     useState(false);
-
-  const [paymentError, setPaymentError] = useState("");
-  const [paymentMessage, setPaymentMessage] = useState("");
-
-  const [notificationStatus, setNotificationStatus] =
-    useState("");
 
   const [paymentSubmitted, setPaymentSubmitted] =
     useState(false);
 
-  const [approvalWaiting, setApprovalWaiting] =
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const [pendingPaymentId, setPendingPaymentId] =
+    useState<number | null>(null);
+
+  const [hasActivePlan, setHasActivePlan] =
     useState(false);
 
-  const [paymentApproved, setPaymentApproved] =
-    useState(false);
-
-  const [submittedPayment, setSubmittedPayment] =
-    useState<PaymentRequest | null>(null);
-
-  const [checkingPayment, setCheckingPayment] =
-    useState(false);
-
-  // ============================================================
-  // INITIAL LOAD
-  // ============================================================
+  const [checkingSubscription, setCheckingSubscription] =
+    useState(true);
 
   useEffect(() => {
-    loadPlans();
-    loadVideos();
-    checkUserAndSubscription();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      checkUserAndSubscription();
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  // ============================================================
-  // NOTIFICATION
-  // ============================================================
-
-  useEffect(() => {
-    requestInitialNotificationAccess();
+    initializeFast();
   }, []);
 
   useEffect(() => {
-    if (!userLoggedIn) return;
-
-    saveCurrentPushSubscription();
-  }, [userLoggedIn]);
-
-  // ============================================================
-  // GOZY PLANS ONLY
-  // ============================================================
-
-  async function loadPlans() {
-    setLoadingPlans(true);
-    setPlansError("");
-
-    const { data, error } = await supabase
-      .from("plans")
-      .select("*")
-      .eq("source", "gozy")
-      .eq("is_active", true)
-      .order("duration_days", {
-        ascending: true,
-      });
-
-    if (error) {
-      console.error("Gozy plans error:", error);
-      setPlansError(error.message);
-      setLoadingPlans(false);
+    if (!urlPlanId || plans.length === 0) {
       return;
     }
 
-    setPlans((data || []) as Plan[]);
-    setLoadingPlans(false);
+    const id = Number(urlPlanId);
+
+    if (!Number.isFinite(id)) {
+      router.replace("/");
+      return;
+    }
+
+    const plan = plans.find(
+      (item) => item.id === id
+    );
+
+    if (!plan) {
+      localStorage.removeItem(
+        "hdlink_pending_plan_id"
+      );
+
+      router.replace("/");
+      return;
+    }
+
+    localStorage.setItem(
+      "hdlink_pending_plan_id",
+      String(plan.id)
+    );
+
+    if (user) {
+      setSelectedPlan(plan);
+    }
+  }, [
+    urlPlanId,
+    plans,
+    user,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (
+      !paymentSubmitted ||
+      !pendingPaymentId
+    ) {
+      return;
+    }
+
+    let stopped = false;
+
+    async function checkStatus() {
+      const {
+        data,
+        error: paymentError,
+      } = await supabase
+        .from("payment_requests")
+        .select(
+          "id,status,user_id,plan_id"
+        )
+        .eq(
+          "id",
+          pendingPaymentId
+        )
+        .maybeSingle();
+
+      if (
+        stopped ||
+        paymentError ||
+        !data
+      ) {
+        return;
+      }
+
+      if (data.status === "approved") {
+        localStorage.removeItem(
+          "hdlink_pending_payment_id"
+        );
+
+        localStorage.removeItem(
+          "hdlink_pending_plan_id"
+        );
+
+        setPaymentSubmitted(false);
+
+        router.replace("/premium");
+
+        return;
+      }
+
+      if (data.status === "rejected") {
+        setPaymentSubmitted(false);
+        setMessage("");
+
+        setError(
+          "Your payment was rejected. Please check your payment details and submit again."
+        );
+
+        localStorage.removeItem(
+          "hdlink_pending_payment_id"
+        );
+      }
+    }
+
+    checkStatus();
+
+    const interval = window.setInterval(
+      checkStatus,
+      4000
+    );
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    paymentSubmitted,
+    pendingPaymentId,
+    router,
+  ]);
+async function initializeFast() {
+  try {
+    // Public home page par getUser() ki jagah getSession()
+    // use karo. Logged-out user ke liye error nahi aayega.
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error(
+        "HDLink session error:",
+        sessionError
+      );
+    }
+
+    const currentUser = session?.user ?? null;
+
+    if (currentUser) {
+      const currentUserData: User = {
+        id: currentUser.id,
+        email: currentUser.email,
+      };
+
+      setUser(currentUserData);
+
+      await checkHDLinkSubscription(
+        currentUser.id
+      );
+    } else {
+      // User logged out hai — normal condition
+      setUser(null);
+      setHasActivePlan(false);
+      setCheckingSubscription(false);
+    }
+  } catch (error) {
+    console.error(
+      "HDLink initialization error:",
+      error
+    );
+
+    setUser(null);
+    setHasActivePlan(false);
+    setCheckingSubscription(false);
   }
 
-  // ============================================================
+  // Public data
+  await Promise.all([
+    loadPlans(),
+    loadVideos(),
+  ]);
+}
+
+  // =========================================================
+  // CHECK ACTIVE HDLINK SUBSCRIPTION
+  // =========================================================
+
+  async function checkHDLinkSubscription(
+    userId: string
+  ) {
+    setCheckingSubscription(true);
+
+    try {
+      const now =
+        new Date().toISOString();
+
+      /*
+       * IMPORTANT:
+       *
+       * We do NOT query subscriptions.source here.
+       *
+       * Some Supabase databases do not have a source
+       * column inside subscriptions.
+       *
+       * Instead:
+       *
+       * 1. Find user's active subscriptions.
+       * 2. Get their plan_id values.
+       * 3. Check those plan IDs inside plans table.
+       * 4. Only plans with source = "hdlink" count.
+       */
+
+      const {
+        data: subscriptionData,
+        error: subscriptionError,
+      } = await supabase
+        .from("subscriptions")
+        .select(
+          "id,status,expires_at,plan_id"
+        )
+        .eq(
+          "user_id",
+          userId
+        )
+        .eq(
+          "status",
+          "active"
+        )
+        .gt(
+          "expires_at",
+          now
+        )
+        .order(
+          "expires_at",
+          {
+            ascending: false,
+          }
+        );
+
+      if (subscriptionError) {
+        console.error(
+          "HDLink subscription query failed:",
+          subscriptionError.message ||
+            subscriptionError
+        );
+
+        setHasActivePlan(false);
+        return;
+      }
+
+      if (
+        !subscriptionData ||
+        subscriptionData.length === 0
+      ) {
+        setHasActivePlan(false);
+        return;
+      }
+
+      const subscriptionPlanIds =
+        subscriptionData
+          .map(
+            (subscription) =>
+              Number(
+                subscription.plan_id
+              )
+          )
+          .filter(
+            (id) =>
+              Number.isFinite(id)
+          );
+
+      if (
+        subscriptionPlanIds.length === 0
+      ) {
+        setHasActivePlan(false);
+        return;
+      }
+
+      /*
+       * Find only HDLink plans.
+       *
+       * We intentionally do not require is_active = true
+       * here because an already purchased subscription
+       * should remain valid until expires_at even if the
+       * plan is later disabled for new purchases.
+       */
+
+      const {
+        data: hdlinkPlans,
+        error: planError,
+      } = await supabase
+        .from("plans")
+        .select(
+          "id,source"
+        )
+        .in(
+          "id",
+          subscriptionPlanIds
+        )
+        .eq(
+          "source",
+          "hdlink"
+        );
+
+      if (planError) {
+        console.error(
+          "HDLink subscription plan check failed:",
+          planError.message ||
+            planError
+        );
+
+        setHasActivePlan(false);
+        return;
+      }
+
+      if (
+        !hdlinkPlans ||
+        hdlinkPlans.length === 0
+      ) {
+        setHasActivePlan(false);
+        return;
+      }
+
+      const hdlinkPlanIds =
+        hdlinkPlans.map(
+          (plan) =>
+            Number(plan.id)
+        );
+
+      const hasValidHDLinkSubscription =
+        subscriptionData.some(
+          (subscription) =>
+            hdlinkPlanIds.includes(
+              Number(
+                subscription.plan_id
+              )
+            ) &&
+            new Date(
+              subscription.expires_at
+            ).getTime() >
+              Date.now()
+        );
+
+      setHasActivePlan(
+        hasValidHDLinkSubscription
+      );
+    } catch (error: any) {
+      console.error(
+        "HDLink subscription check failed:",
+        error?.message ||
+          error
+      );
+
+      setHasActivePlan(false);
+    } finally {
+      setCheckingSubscription(false);
+    }
+  }
+
+  // =========================================================
+  // LOAD HDLINK PLANS
+  // =========================================================
+
+  async function loadPlans() {
+    const {
+      data,
+      error: planError,
+    } = await supabase
+      .from("plans")
+      .select(
+        "id,name,price,duration_days,description,is_active,source"
+      )
+      .eq(
+        "is_active",
+        true
+      )
+      .eq(
+        "source",
+        "hdlink"
+      )
+      .order(
+        "price",
+        {
+          ascending: true,
+        }
+      );
+
+    if (planError) {
+      console.error(
+        "HDLink plans error:",
+        planError
+      );
+
+      setPlans([]);
+      return;
+    }
+
+    const databasePlans =
+      (data || []) as Plan[];
+
+    const matched: Plan[] = [];
+
+    for (const config of PLAN_CONFIG) {
+      let plan:
+        | Plan
+        | undefined;
+
+      if (config.key === "day") {
+        plan =
+          databasePlans.find(
+            (item) =>
+              Number(
+                item.price
+              ) === 210 &&
+              Number(
+                item.duration_days
+              ) === 1
+          );
+      }
+
+      if (
+        config.key ===
+        "three-months"
+      ) {
+        plan =
+          databasePlans.find(
+            (item) =>
+              Number(
+                item.price
+              ) === 550 &&
+              Number(
+                item.duration_days
+              ) === 90
+          );
+      }
+
+      if (
+        config.key ===
+        "lifetime"
+      ) {
+        plan =
+          databasePlans.find(
+            (item) => {
+              const name =
+                String(
+                  item.name ||
+                    ""
+                ).toLowerCase();
+
+              const duration =
+                Number(
+                  item.duration_days
+                );
+
+              return (
+                Number(
+                  item.price
+                ) === 850 &&
+                (
+                  name.includes(
+                    "life"
+                  ) ||
+                  name.includes(
+                    "lifetime"
+                  ) ||
+                  duration >=
+                    3650
+                )
+              );
+            }
+          );
+      }
+
+      if (plan) {
+        matched.push({
+          ...plan,
+          name:
+            config.title,
+          price:
+            config.price,
+        });
+      }
+    }
+
+    setPlans(matched);
+  }
+
+  // =========================================================
   // LOAD VIDEOS
-  // ============================================================
+  // =========================================================
 
   async function loadVideos() {
     setLoadingVideos(true);
 
     try {
-      const response = await fetch("/api/bunny-videos", {
-        cache: "no-store",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Videos load nahi hue."
-        );
-      }
-
-      setVideos(data.videos || []);
-    } catch (error) {
-      console.error("Videos error:", error);
-    } finally {
-      setLoadingVideos(false);
-    }
-  }
-
-  // ============================================================
-  // CHECK USER + GOZY SUBSCRIPTION
-  // ============================================================
-
-  async function checkUserAndSubscription() {
-    setCheckingSubscription(true);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setUserLoggedIn(false);
-      setHasActiveSubscription(false);
-      setCheckingSubscription(false);
-      return;
-    }
-
-    setUserLoggedIn(true);
-
-    const now = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from("subscriptions")
-      .select(
-        "id, status, starts_at, expires_at, source"
-      )
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .eq("source", "gozy")
-      .gt("expires_at", now)
-      .order("expires_at", {
-        ascending: false,
-      })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error(
-        "Gozy subscription error:",
-        error
-      );
-
-      setHasActiveSubscription(false);
-      setCheckingSubscription(false);
-      return;
-    }
-
-    const active = !!data;
-
-    setHasActiveSubscription(active);
-    setCheckingSubscription(false);
-
-    if (active) {
-      setPaymentApproved(true);
-      setApprovalWaiting(false);
-    }
-  }
-
-  // ============================================================
-  // AUTO OPEN GOZY PLAN AFTER LOGIN
-  // ============================================================
-
-  useEffect(() => {
-    if (
-      checkingSubscription ||
-      loadingPlans ||
-      !userLoggedIn ||
-      hasActiveSubscription ||
-      plans.length === 0
-    ) {
-      return;
-    }
-
-    const params = new URLSearchParams(
-      window.location.search
-    );
-
-    const openPlanId =
-      params.get("openPlan") ||
-      params.get("plan") ||
-      localStorage.getItem(
-        "gozy_pending_plan_id"
-      );
-
-    if (!openPlanId) {
-      return;
-    }
-
-    const plan = plans.find(
-      (item) =>
-        String(item.id) === String(openPlanId)
-    );
-
-    if (!plan) {
-      return;
-    }
-
-    localStorage.removeItem(
-      "gozy_pending_plan_id"
-    );
-
-    localStorage.removeItem(
-      "gozy_pending_plan_name"
-    );
-
-    window.history.replaceState(
-      {},
-      "",
-      "/"
-    );
-
-    setSelectedPlan(plan);
-    setUtr("");
-    setPaymentError("");
-    setPaymentMessage("");
-    setPaymentSubmitted(false);
-    setApprovalWaiting(false);
-    setPaymentApproved(false);
-  }, [
-    checkingSubscription,
-    loadingPlans,
-    userLoggedIn,
-    hasActiveSubscription,
-    plans,
-  ]);
-
-  // ============================================================
-  // CHECK GOZY PAYMENT ONLY
-  // ============================================================
-
-  async function checkLatestPayment(
-    userId: string
-  ) {
-    if (checkingPayment) return;
-
-    setCheckingPayment(true);
-
-    try {
-      const { data, error } = await supabase
-        .from("payment_requests")
-        .select(
-          "id, plan_id, status, utr, created_at, source"
-        )
-        .eq("user_id", userId)
-        .eq("source", "gozy")
-        .order("created_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        console.error(
-          "Gozy payment check error:",
-          error
-        );
-        return;
-      }
-
-      if (!data) {
-        return;
-      }
-
-      const payment =
-        data as PaymentRequest;
-
-      const previousStatus =
-        localStorage.getItem(
-          "gozy_last_payment_status"
-        );
-
-      setSubmittedPayment(payment);
-
-      if (
-        payment.status === "approved" &&
-        previousStatus === "pending"
-      ) {
-        showBrowserNotification(
-          "Payment Successful 🎉",
-          "Your Gozy payment has been approved and Premium access is now active.",
-          "gozy-payment-approved"
-        );
-
-        await checkUserAndSubscription();
-      }
-
-      if (
-        payment.status === "rejected" &&
-        previousStatus === "pending"
-      ) {
-        showBrowserNotification(
-          "Payment Failed",
-          "Your Gozy payment request was rejected. Please check your UTR.",
-          "gozy-payment-rejected"
-        );
-      }
-
-      if (
-        payment.status !== previousStatus
-      ) {
-        localStorage.setItem(
-          "gozy_last_payment_status",
-          payment.status
-        );
-      }
-
-      if (payment.status === "pending") {
-        setPaymentSubmitted(true);
-        setApprovalWaiting(true);
-        setPaymentApproved(false);
-      }
-
-      if (payment.status === "approved") {
-        setPaymentSubmitted(true);
-        setApprovalWaiting(false);
-        setPaymentApproved(true);
-        setHasActiveSubscription(true);
-      }
-
-      if (payment.status === "rejected") {
-        setPaymentSubmitted(false);
-        setApprovalWaiting(false);
-        setPaymentApproved(false);
-      }
-    } finally {
-      setCheckingPayment(false);
-    }
-  }
-
-  // ============================================================
-  // PAYMENT POLLING
-  // ============================================================
-
-  useEffect(() => {
-    if (!userLoggedIn) return;
-
-    let interval:
-      ReturnType<typeof setInterval> | null =
-      null;
-
-    async function startChecking() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      await checkLatestPayment(user.id);
-
-      interval = setInterval(() => {
-        checkLatestPayment(user.id);
-      }, 5000);
-    }
-
-    startChecking();
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [userLoggedIn]);
-
-  // ============================================================
-  // BROWSER NOTIFICATION
-  // ============================================================
-
-  function showBrowserNotification(
-    title: string,
-    body: string,
-    tag: string
-  ) {
-    try {
-      if (
-        typeof window === "undefined" ||
-        !("Notification" in window) ||
-        Notification.permission !== "granted"
-      ) {
-        return;
-      }
-
-      new Notification(title, {
-        body,
-        tag,
-        icon: "/icon-192.png",
-      });
-    } catch (error) {
-      console.error(
-        "Browser notification error:",
-        error
-      );
-    }
-  }
-
-  // ============================================================
-  // INITIAL NOTIFICATION ACCESS
-  // ============================================================
-
-  async function requestInitialNotificationAccess() {
-    try {
-      if (
-        typeof window === "undefined" ||
-        !("Notification" in window) ||
-        !("serviceWorker" in navigator) ||
-        !("PushManager" in window)
-      ) {
-        return;
-      }
-
-      await navigator.serviceWorker.register(
-        "/sw.js"
-      );
-
-      if (
-        Notification.permission === "default"
-      ) {
-        const permission =
-          await Notification.requestPermission();
-
-        if (permission === "granted") {
-          setNotificationStatus(
-            "Notifications enabled ✓"
-          );
-        }
-
-        if (permission === "denied") {
-          setNotificationStatus(
-            "Notifications blocked. Browser settings se allow kar sakte hain."
-          );
-        }
-      } else if (
-        Notification.permission === "granted"
-      ) {
-        setNotificationStatus(
-          "Notifications enabled ✓"
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Notification permission error:",
-        error
-      );
-    }
-  }
-
-  // ============================================================
-  // SAVE PUSH SUBSCRIPTION
-  // ============================================================
-
-  async function saveCurrentPushSubscription() {
-    try {
-      if (
-        typeof window === "undefined" ||
-        !("Notification" in window) ||
-        !("serviceWorker" in navigator) ||
-        !("PushManager" in window)
-      ) {
-        return;
-      }
-
-      const vapidPublicKey =
-        process.env
-          .NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-      if (!vapidPublicKey) {
-        console.error(
-          "NEXT_PUBLIC_VAPID_PUBLIC_KEY missing"
-        );
-        return;
-      }
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (
-        !user ||
-        Notification.permission !== "granted"
-      ) {
-        return;
-      }
-
-      await navigator.serviceWorker.register(
-        "/sw.js"
-      );
-
-      const registration =
-        await navigator.serviceWorker.ready;
-
-      let pushSubscription =
-        await registration.pushManager.getSubscription();
-
-      if (!pushSubscription) {
-        pushSubscription =
-          await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey:
-              urlBase64ToUint8Array(
-                vapidPublicKey
-              ),
-          });
-      }
-
-      const subscriptionJSON =
-        pushSubscription.toJSON();
-
-      const endpoint =
-        subscriptionJSON.endpoint;
-
-      const p256dh =
-        subscriptionJSON.keys?.p256dh;
-
-      const auth =
-        subscriptionJSON.keys?.auth;
-
-      if (
-        !endpoint ||
-        !p256dh ||
-        !auth
-      ) {
-        return;
-      }
-
-      const { error } = await supabase
-        .from("push_subscriptions")
-        .upsert(
+      const response =
+        await fetch(
+          "/api/bunny-videos",
           {
-            user_id: user.id,
-            endpoint,
-            p256dh,
-            auth,
-            updated_at:
-              new Date().toISOString(),
-          },
-          {
-            onConflict: "endpoint",
+            cache:
+              "no-store",
           }
         );
 
-      if (error) {
-        console.error(
-          "Push subscription save error:",
-          error
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Videos unavailable."
         );
-        return;
       }
 
-      setNotificationStatus(
-        "Notifications enabled ✓"
+      let loaded: Video[] =
+        [];
+
+      if (
+        Array.isArray(
+          data
+        )
+      ) {
+        loaded =
+          data;
+      } else if (
+        Array.isArray(
+          data?.videos
+        )
+      ) {
+        loaded =
+          data.videos;
+      } else if (
+        Array.isArray(
+          data?.items
+        )
+      ) {
+        loaded =
+          data.items;
+      }
+
+      setVideos(
+        loaded.slice(
+          0,
+          12
+        )
       );
-    } catch (error) {
+    } catch (err) {
       console.error(
-        "Push subscription error:",
-        error
+        "Video preview error:",
+        err
+      );
+
+      setVideos([]);
+    } finally {
+      setLoadingVideos(
+        false
       );
     }
   }
 
-  // ============================================================
-  // BASE64
-  // ============================================================
+  // =========================================================
+  // FIND PLAN
+  // =========================================================
 
-  function urlBase64ToUint8Array(
-    base64String: string
+  function findPlan(
+    key: string
   ) {
-    const padding = "=".repeat(
-      (4 - (base64String.length % 4)) % 4
-    );
+    if (
+      key === "day"
+    ) {
+      return (
+        plans.find(
+          (p) =>
+            Number(
+              p.price
+            ) === 210 &&
+            Number(
+              p.duration_days
+            ) === 1
+        ) ||
+        null
+      );
+    }
 
-    const base64 = (
-      base64String + padding
-    )
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
+    if (
+      key ===
+      "three-months"
+    ) {
+      return (
+        plans.find(
+          (p) =>
+            Number(
+              p.price
+            ) === 550 &&
+            Number(
+              p.duration_days
+            ) === 90
+        ) ||
+        null
+      );
+    }
 
-    const rawData =
-      window.atob(base64);
+    if (
+      key === "lifetime"
+    ) {
+      return (
+        plans.find(
+          (p) =>
+            Number(
+              p.price
+            ) === 850
+        ) ||
+        null
+      );
+    }
 
-    return Uint8Array.from(
-      [...rawData].map((char) =>
-        char.charCodeAt(0)
+    return null;
+  }
+
+  // =========================================================
+  // SELECT PLAN
+  // =========================================================
+
+  function selectPlan(
+    key: string
+  ) {
+    setError("");
+    setMessage("");
+    setUtr("");
+
+    const plan =
+      findPlan(key);
+
+    if (!plan) {
+      setError(
+        "This HDLink plan is not configured in Supabase yet."
+      );
+
+      return;
+    }
+
+    localStorage.setItem(
+      "hdlink_pending_plan_id",
+      String(
+        plan.id
       )
     );
-  }
 
-  // ============================================================
-  // ENABLE PUSH
-  // ============================================================
-
-  async function enablePushNotifications() {
-    await requestInitialNotificationAccess();
-    await saveCurrentPushSubscription();
-  }
-
-  // ============================================================
-  // GOZY BUY PLAN
-  // ============================================================
-
-  function handleBuyPlan(plan: Plan) {
-    if (plan.source !== "gozy") {
-      console.error(
-        "Blocked non-Gozy plan:",
-        plan
+    if (!user) {
+      router.push(
+        `/auth/register?plan=${encodeURIComponent(
+          String(plan.id)
+        )}`
       );
+
       return;
     }
 
-    if (!userLoggedIn) {
-      localStorage.setItem(
-        "gozy_pending_plan_id",
+    setSelectedPlan(
+      plan
+    );
+
+    router.replace(
+      `/?plan=${encodeURIComponent(
         String(plan.id)
-      );
-
-      localStorage.setItem(
-        "gozy_pending_plan_name",
-        plan.name
-      );
-
-      window.location.href =
-        `/auth/login?plan=${plan.id}`;
-
-      return;
-    }
-
-    if (hasActiveSubscription) {
-      window.location.href =
-        "/premium";
-
-      return;
-    }
-
-    openPaymentModal(plan);
+      )}`,
+      {
+        scroll: false,
+      }
+    );
   }
 
-  // ============================================================
-  // OPEN PAYMENT MODAL
-  // ============================================================
+  // =========================================================
+  // SUBMIT PAYMENT
+  // =========================================================
 
-  function openPaymentModal(
-    plan: Plan
+  async function submitPayment(
+    event: FormEvent<HTMLFormElement>
   ) {
-    if (plan.source !== "gozy") {
-      return;
-    }
+    event.preventDefault();
 
-    setSelectedPlan(plan);
-    setUtr("");
-    setPaymentError("");
-    setPaymentMessage("");
-    setPaymentSubmitted(false);
-    setApprovalWaiting(false);
-    setPaymentApproved(false);
-  }
-
-  // ============================================================
-  // SUBMIT GOZY PAYMENT
-  // ============================================================
-
-  async function submitPaymentRequest() {
-    setPaymentError("");
-    setPaymentMessage("");
+    setError("");
+    setMessage("");
 
     if (!selectedPlan) {
-      setPaymentError(
+      setError(
         "Please select a plan."
       );
+
       return;
     }
 
-    if (selectedPlan.source !== "gozy") {
-      setPaymentError(
-        "Invalid Gozy plan."
+    if (!user) {
+      router.push(
+        `/auth/register?plan=${encodeURIComponent(
+          String(
+            selectedPlan.id
+          )
+        )}`
       );
+
       return;
     }
 
-    if (!utr.trim()) {
-      setPaymentError(
-        "Please enter your UTR / Transaction ID."
+    const transactionId =
+      utr.trim();
+
+    if (
+      transactionId.length <
+      6
+    ) {
+      setError(
+        "Please enter a valid UTR / Transaction ID."
       );
+
       return;
     }
 
-    setSubmittingPayment(true);
+    setSubmitting(true);
 
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setPaymentError(
-          "Please login or create an account first."
-        );
-
-        setSubmittingPayment(false);
-        return;
-      }
-
-      const now =
-        new Date().toISOString();
-
-      // ----------------------------------------------------------
-      // CHECK GOZY SUBSCRIPTION ONLY
-      // ----------------------------------------------------------
-
-      const {
-        data: activeSubscription,
+        data: duplicate,
+        error:
+          duplicateError,
       } = await supabase
-        .from("subscriptions")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .eq("source", "gozy")
-        .gt("expires_at", now)
-        .limit(1)
-        .maybeSingle();
-
-      if (activeSubscription) {
-        setPaymentError(
-          "Your Gozy Premium plan is already active."
-        );
-
-        setHasActiveSubscription(true);
-        setSubmittingPayment(false);
-        return;
-      }
-
-      // ----------------------------------------------------------
-      // DUPLICATE GOZY UTR
-      // ----------------------------------------------------------
-
-      const {
-        data: existingPayment,
-      } = await supabase
-        .from("payment_requests")
-        .select(
-          "id, status, utr, source"
+        .from(
+          "payment_requests"
         )
-        .eq("user_id", user.id)
-        .eq("utr", utr.trim())
-        .eq("source", "gozy")
-        .maybeSingle();
-
-      if (existingPayment) {
-        setPaymentError(
-          "This UTR has already been submitted for Gozy."
-        );
-
-        setSubmittingPayment(false);
-        return;
-      }
-
-      // ----------------------------------------------------------
-      // CHECK GOZY PENDING PAYMENT ONLY
-      // ----------------------------------------------------------
-
-      const {
-        data: pendingPayment,
-      } = await supabase
-        .from("payment_requests")
         .select(
-          "id, plan_id, status, utr, created_at, source"
+          "id,status"
         )
-        .eq("user_id", user.id)
-        .eq("status", "pending")
-        .eq("source", "gozy")
-        .limit(1)
+        .eq(
+          "utr",
+          transactionId
+        )
         .maybeSingle();
 
-      if (pendingPayment) {
-        setPaymentError(
-          "Your previous Gozy payment is still waiting for admin verification."
+      if (duplicateError) {
+        throw duplicateError;
+      }
+
+      if (duplicate) {
+        setError(
+          "This UTR / Transaction ID has already been submitted."
         );
 
-        setPaymentSubmitted(true);
-        setApprovalWaiting(true);
-
-        setSubmittedPayment(
-          pendingPayment as PaymentRequest
-        );
-
-        setSubmittingPayment(false);
         return;
       }
 
-      // ----------------------------------------------------------
-      // INSERT GOZY PAYMENT
-      // ----------------------------------------------------------
-
       const {
-        data: insertedPayment,
-        error,
+        data: inserted,
+        error:
+          insertError,
       } = await supabase
-        .from("payment_requests")
+        .from(
+          "payment_requests"
+        )
         .insert({
-          user_id: user.id,
-          plan_id: selectedPlan.id,
-          utr: utr.trim(),
-          status: "pending",
-          source: "gozy",
+          user_id:
+            user.id,
+          plan_id:
+            selectedPlan.id,
+          utr:
+            transactionId,
+          status:
+            "pending",
+          source:
+            "hdlink",
         })
         .select(
-          "id, plan_id, status, utr, created_at, source"
+          "id,user_id,plan_id,status"
         )
         .single();
 
-      if (error) {
-        console.error(
-          "Gozy payment request error:",
-          error
-        );
-
-        setPaymentError(
-          error.message
-        );
-
-        setSubmittingPayment(false);
-        return;
+      if (insertError) {
+        throw insertError;
       }
 
-      setSubmittedPayment(
-        insertedPayment as PaymentRequest
-      );
+      if (inserted) {
+        setPendingPaymentId(
+          inserted.id
+        );
+
+        localStorage.setItem(
+          "hdlink_pending_payment_id",
+          String(
+            inserted.id
+          )
+        );
+      }
 
       localStorage.setItem(
-        "gozy_last_payment_status",
-        "pending"
+        "hdlink_pending_plan_id",
+        String(
+          selectedPlan.id
+        )
       );
 
-      setPaymentSubmitted(true);
-      setApprovalWaiting(true);
-      setPaymentApproved(false);
+      setPaymentSubmitted(
+        true
+      );
 
-      setUtr("");
-      setSubmittingPayment(false);
-
-      await enablePushNotifications();
-    } catch (error: any) {
+      setMessage(
+        "Payment submitted. Waiting for admin approval."
+      );
+    } catch (err: any) {
       console.error(
-        "Gozy payment submit error:",
-        error
+        "Payment submit error:",
+        err
       );
 
-      setPaymentError(
-        error?.message ||
-          "Payment request submit nahi ho paya."
+      setError(
+        err?.message ||
+          "Payment could not be submitted."
       );
-
-      setSubmittingPayment(false);
+    } finally {
+      setSubmitting(
+        false
+      );
     }
   }
 
-  // ============================================================
-  // CLOSE MODAL
-  // ============================================================
+  // =========================================================
+  // CLOSE PAYMENT
+  // =========================================================
 
-  function closePaymentModal() {
-    setSelectedPlan(null);
-    setPaymentError("");
-    setPaymentMessage("");
+  function closePayment() {
+    if (submitting) {
+      return;
+    }
+
+    setSelectedPlan(
+      null
+    );
+
+    setUtr("");
+
+    setError("");
+
+    setMessage("");
+
+    setPaymentSubmitted(
+      false
+    );
+
+    setPendingPaymentId(
+      null
+    );
+
+    localStorage.removeItem(
+      "hdlink_pending_plan_id"
+    );
+
+    router.replace(
+      "/"
+    );
   }
 
-  // ============================================================
+  // =========================================================
   // LOGOUT
-  // ============================================================
+  // =========================================================
 
-  async function handleLogout() {
+  async function logout() {
     await supabase.auth.signOut();
 
-    localStorage.removeItem(
-      "gozy_pending_plan_id"
+    setUser(null);
+    setHasActivePlan(
+      false
     );
 
     localStorage.removeItem(
-      "gozy_pending_plan_name"
+      "hdlink_pending_plan_id"
     );
 
     localStorage.removeItem(
-      "gozy_last_payment_status"
+      "hdlink_pending_payment_id"
     );
 
-    setUserLoggedIn(false);
-    setHasActiveSubscription(false);
-    setPaymentSubmitted(false);
-    setApprovalWaiting(false);
-    setPaymentApproved(false);
-    setSubmittedPayment(null);
-
-    window.location.reload();
+    window.location.href =
+      "/";
   }
-
-  // ============================================================
-  // VIDEO DURATION
-  // ============================================================
-
-  function formatDuration(
-    seconds: number
-  ) {
-    if (!seconds || seconds <= 0) {
-      return "";
-    }
-
-    const minutes =
-      Math.floor(seconds / 60);
-
-    const secs =
-      Math.floor(seconds % 60);
-
-    return `${minutes}:${secs
-      .toString()
-      .padStart(2, "0")}`;
-  }
-
-  // ============================================================
-  // PAGE
-  // ============================================================
 
   return (
-    <main className="min-h-screen bg-[#070707] text-white">
+    <main className="min-h-screen overflow-hidden bg-[#030303] text-white">
+
+      {/* BACKGROUND */}
+
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-1/2 top-[-250px] h-[650px] w-[900px] -translate-x-1/2 rounded-full bg-violet-600/10 blur-[160px]" />
+
+        <div className="absolute right-[-200px] top-[600px] h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-[150px]" />
+
+        <div className="absolute bottom-[-250px] left-[-200px] h-[500px] w-[500px] rounded-full bg-fuchsia-500/10 blur-[150px]" />
+      </div>
 
       {/* NAVBAR */}
 
-      <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#070707]/90 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur-2xl">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
 
+          <button
+            onClick={() =>
+              window.scrollTo({
+                top: 0,
+                behavior: "smooth",
+              })
+            }
+            className="flex items-center gap-3"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg font-black text-black shadow-xl">
+              H
+            </div>
+
+            <div className="text-left">
+              <div className="text-lg font-black">
+                HDLink
+              </div>
+
+              <div className="text-[9px] uppercase tracking-[0.3em] text-white/30">
+                VIP Premium
+              </div>
+            </div>
+          </button>
+
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white font-black text-black">
-              G
-            </div>
 
-            <div>
-              <div className="text-lg font-bold">
-                Gozy
-              </div>
-
-              <div className="text-[10px] uppercase tracking-[0.25em] text-white/35">
-                Premium
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden items-center gap-8 md:flex">
-            <a
-              href="#home"
-              className="text-sm text-white/80 hover:text-white"
-            >
-              Home
-            </a>
-
-            <a
-              href="#videos"
-              className="text-sm text-white/50 hover:text-white"
-            >
-              Videos
-            </a>
-
-            <a
-              href="#features"
-              className="text-sm text-white/50 hover:text-white"
-            >
-              Features
-            </a>
+            {user &&
+              !checkingSubscription &&
+              hasActivePlan && (
+                <button
+                  onClick={() =>
+                    router.push(
+                      "/premium"
+                    )
+                  }
+                  className="rounded-full bg-violet-500 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 hover:bg-violet-400"
+                >
+                  👑 Premium
+                </button>
+              )}
 
             <a
               href="#plans"
-              className="text-sm text-white/50 hover:text-white"
+              className="hidden rounded-full border border-white/10 px-5 py-2.5 text-xs font-bold text-white/70 transition hover:bg-white/10 sm:block"
             >
               Plans
             </a>
 
-            <a
-              href="#about"
-              className="text-sm text-white/50 hover:text-white"
-            >
-              About
-            </a>
-          </div>
-
-          <div className="flex items-center gap-3">
-
-            {!checkingSubscription &&
-            userLoggedIn ? (
-              <>
-                {hasActiveSubscription && (
-                  <a
-                    href="/premium"
-                    className="hidden rounded-full border border-green-500/20 bg-green-500/10 px-4 py-2 text-xs font-semibold text-green-300 sm:block"
-                  >
-                    ✓ Premium Active
-                  </a>
-                )}
-
-                <button
-                  onClick={handleLogout}
-                  className="hidden rounded-full border border-white/15 px-5 py-2.5 text-sm sm:block"
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <a
-                href="/auth/login"
-                className="hidden rounded-full border border-white/15 px-5 py-2.5 text-sm sm:block"
+            {user ? (
+              <button
+                onClick={logout}
+                className="rounded-full border border-white/10 px-4 py-2.5 text-xs font-bold text-white/60 transition hover:bg-white/10 hover:text-white"
               >
-                Login
-              </a>
+                Logout
+              </button>
+            ) : (
+              <button
+                onClick={() =>
+                  router.push(
+                    "/auth/register"
+                  )
+                }
+                className="rounded-full bg-white px-5 py-2.5 text-xs font-black text-black transition hover:bg-white/90"
+              >
+                Create Account
+              </button>
             )}
 
-            <a
-              href="#plans"
-              className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black"
-            >
-              Get Started
-            </a>
-
-            <button
-              onClick={() =>
-                setMenuOpen(!menuOpen)
-              }
-              className="rounded-lg border border-white/10 px-3 py-2 md:hidden"
-            >
-              ☰
-            </button>
           </div>
         </div>
-
-        {menuOpen && (
-          <div className="border-t border-white/10 bg-[#0b0b0b] px-5 py-5 md:hidden">
-            <div className="flex flex-col gap-5 text-sm">
-
-              <a
-                href="#home"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-              >
-                Home
-              </a>
-
-              <a
-                href="#videos"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-              >
-                Videos
-              </a>
-
-              <a
-                href="#features"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-              >
-                Features
-              </a>
-
-              <a
-                href="#plans"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-              >
-                Plans
-              </a>
-
-              <a
-                href="#about"
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-              >
-                About
-              </a>
-
-              {userLoggedIn ? (
-                <button
-                  onClick={handleLogout}
-                  className="text-left"
-                >
-                  Logout
-                </button>
-              ) : (
-                <>
-                  <a href="/auth/login">
-                    Login
-                  </a>
-
-                  <a href="/auth/register">
-                    Create Account
-                  </a>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </nav>
-
-      {/* NOTIFICATION */}
-
-      {notificationStatus && (
-        <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border border-white/10 bg-[#151515] px-5 py-4 shadow-2xl">
-          <div className="flex items-center gap-3">
-
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
-              🔔
-            </div>
-
-            <div>
-              <p className="font-semibold">
-                Notifications
-              </p>
-
-              <p className="mt-1 text-xs text-white/50">
-                {notificationStatus}
-              </p>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* HERO */}
 
-      <section
-        id="home"
-        className="relative overflow-hidden"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(255,255,255,0.13),transparent_45%)]" />
+      <section className="relative z-10 min-h-[calc(100vh-80px)] px-5 pb-20 pt-20 sm:pt-28">
+        <div className="mx-auto max-w-7xl">
 
-        <div className="relative mx-auto max-w-7xl px-5 pb-24 pt-24 lg:px-8 lg:pb-32 lg:pt-32">
+          <div className="max-w-6xl">
 
-          <div className="max-w-4xl">
-
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-white/70">
-              <span className="h-2 w-2 rounded-full bg-green-400" />
-              Premium video streaming
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-4 py-2 text-xs font-bold text-violet-200">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-violet-400" />
+              HDLink VIP Premium Access
             </div>
 
-            <h1 className="text-5xl font-black leading-[0.95] tracking-[-0.04em] sm:text-6xl lg:text-8xl">
-              Watch more.
+            <h1 className="text-5xl font-black leading-[0.95] tracking-[-0.06em] sm:text-7xl lg:text-8xl xl:text-9xl">
+              Unlimited.
+              <br />
+              Premium.
               <br />
               <span className="text-white/35">
-                Experience more.
+                HDLink.
               </span>
             </h1>
 
-            <p className="mt-7 max-w-2xl text-base leading-7 text-white/50 sm:text-lg">
-              Discover premium videos, exclusive content
-              and a smooth streaming experience — all in one place.
+            <p className="mt-8 max-w-4xl text-base leading-8 text-white/50 sm:text-lg">
+              Unlock the complete HDLink premium
+              experience with premium video access,
+              exclusive updates, VIP community access
+              and secure account-based access.
+              Get premium access, stay updated with
+              the latest releases and enjoy the
+              complete HDLink VIP experience.
             </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#videos"
-                className="rounded-full bg-white px-7 py-4 text-center text-sm font-bold text-black"
+            <div className="mt-9 flex flex-wrap gap-3">
+
+              <button
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "plans"
+                    )
+                    ?.scrollIntoView({
+                      behavior:
+                        "smooth",
+                    })
+                }
+                className="rounded-full bg-white px-7 py-4 text-sm font-black text-black shadow-2xl transition hover:-translate-y-1"
               >
-                Explore Videos
-              </a>
+                View Premium Plans →
+              </button>
 
               <a
-                href="#plans"
-                className="rounded-full border border-white/15 bg-white/[0.03] px-7 py-4 text-center text-sm font-semibold"
+                href={TELEGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-sky-400/30 bg-sky-400/10 px-7 py-4 text-sm font-black text-sky-200 transition hover:bg-sky-400/20"
               >
-                View Plans →
+                ✈️ Join Telegram
               </a>
-            </div>
 
-            <div className="mt-12 flex flex-wrap gap-x-8 gap-y-4 text-sm text-white/40">
-              <span>✓ No Ads</span>
-              <span>✓ Full Watch</span>
-              <span>✓ HD Streaming</span>
-              <span>✓ Secure Access</span>
             </div>
 
           </div>
-        </div>
-      </section>
 
-      {/* NOTICE */}
+          <div className="mt-16 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 
-      <section className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center">
-
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
-            🔥
-          </div>
-
-          <h2 className="mt-4 text-xl font-bold">
-            Instagram से आए हैं?
-          </h2>
-
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/50">
-            Instagram पर देखे गए सभी premium videos
-            आपको हमारी premium library में देखने को मिलेंगे।
-            सभी videos premium access के लिए available हैं।
-          </p>
-
-          <a
-            href="#plans"
-            className="mt-5 inline-block rounded-full bg-white px-6 py-3 text-sm font-bold text-black"
-          >
-            Premium Unlock करें →
-          </a>
-
-        </div>
-      </section>
-
-      {/* VIDEOS */}
-
-      <section
-        id="videos"
-        className="mx-auto max-w-7xl px-5 py-20 lg:px-8"
-      >
-        <div className="mb-10">
-
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-white/40">
-            Discover
-          </p>
-
-          <h2 className="text-3xl font-bold sm:text-4xl">
-            Featured Videos
-          </h2>
-
-          <p className="mt-3 text-sm text-white/40">
-            Preview the library. Subscribe for full access.
-          </p>
-
-        </div>
-
-        {loadingVideos ? (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 8 }).map(
-              (_, index) => (
+            {[
+              [
+                "10,000+",
+                "Telegram Video Updates",
+              ],
+              [
+                "VIP",
+                "Premium Community",
+              ],
+              [
+                "24/7",
+                "Premium Access",
+              ],
+              [
+                "1 Account",
+                "Secure Account Access",
+              ],
+            ].map(
+              ([number, text]) => (
                 <div
-                  key={index}
-                  className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
+                  key={text}
+                  className="rounded-3xl border border-white/10 bg-white/[0.035] p-6"
                 >
-                  <div className="aspect-video animate-pulse bg-white/10" />
+                  <div className="text-3xl font-black">
+                    {number}
+                  </div>
 
-                  <div className="space-y-3 p-5">
-                    <div className="h-4 w-3/4 animate-pulse rounded bg-white/10" />
-                    <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
+                  <div className="mt-2 text-xs text-white/35">
+                    {text}
                   </div>
                 </div>
               )
             )}
+
           </div>
-        ) : videos.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-10 text-center text-white/40">
-            Videos अभी उपलब्ध नहीं हैं।
-          </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {videos.slice(0, 8).map(
-              (video, index) => (
-                <div
-                  key={video.id}
-                  className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]"
-                >
-
-                  <div className="relative aspect-video overflow-hidden bg-black">
-
-                    <img
-                      src={video.thumbnail_url}
-                      alt={video.title}
-                      className={`h-full w-full object-cover transition duration-500 ${
-                        hasActiveSubscription
-                          ? "group-hover:scale-105"
-                          : "scale-105 blur-[5px] brightness-[0.55]"
-                      }`}
-                    />
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
-
-                    <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/70 px-3 py-1 text-[10px] font-bold uppercase">
-                      {index === 0
-                        ? "Featured"
-                        : "Premium"}
-                    </div>
-
-                    {video.duration > 0 && (
-                      <div className="absolute bottom-3 right-3 rounded-md bg-black/80 px-2 py-1 text-xs">
-                        {formatDuration(
-                          video.duration
-                        )}
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-2xl">
-                        {hasActiveSubscription
-                          ? "▶"
-                          : "🔒"}
-                      </div>
-                    </div>
-
-                    {!hasActiveSubscription && (
-                      <div className="absolute bottom-3 left-3 rounded-full bg-black/70 px-3 py-1 text-[10px] font-semibold backdrop-blur">
-                        Premium access required
-                      </div>
-                    )}
-
-                  </div>
-
-                  <div className="p-5">
-
-                    <h3 className="line-clamp-1 font-bold">
-                      {video.title}
-                    </h3>
-
-                    <p className="mt-2 text-xs leading-5 text-white/40">
-                      Premium video • Full access required
-                    </p>
-
-                    {hasActiveSubscription ? (
-                      <a
-                        href="/premium"
-                        className="mt-5 block w-full rounded-full bg-white py-3 text-center text-sm font-bold text-black"
-                      >
-                        Watch Now
-                      </a>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          const firstPlan =
-                            plans[0];
-
-                          if (firstPlan) {
-                            handleBuyPlan(
-                              firstPlan
-                            );
-                          }
-                        }}
-                        className="mt-5 block w-full rounded-full border border-white/15 bg-white/[0.04] py-3 text-center text-sm font-bold"
-                      >
-                        Unlock Video
-                      </button>
-                    )}
-
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* FEATURES */}
-
-      <section
-        id="features"
-        className="mx-auto max-w-7xl px-5 py-24 lg:px-8"
-      >
-        <div className="mx-auto mb-12 max-w-2xl text-center">
-
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/40">
-            Premium Features
-          </p>
-
-          <h2 className="mt-3 text-4xl font-bold sm:text-5xl">
-            Everything you need.
-          </h2>
-
-          <p className="mt-4 text-white/45">
-            A clean and premium streaming experience designed
-            for uninterrupted viewing.
-          </p>
 
         </div>
+      </section>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            [
-              "🚫",
-              "No Ads",
-              "Enjoy premium content without distracting advertisements.",
-            ],
-            [
-              "▶",
-              "Full Watch",
-              "Premium members get complete access to available videos.",
-            ],
-            [
-              "⚡",
-              "Fast Streaming",
-              "Smooth playback powered by global video delivery.",
-            ],
-            [
-              "HD",
-              "HD Quality",
-              "Enjoy supported videos in high-quality streaming.",
-            ],
-            [
-              "🔒",
-              "Secure Access",
-              "Premium access is connected to your account.",
-            ],
-            [
-              "♾",
-              "Large Library",
-              "Access the growing premium video collection.",
-            ],
-            [
-              "📱",
-              "Mobile Friendly",
-              "Enjoy streaming on phones, tablets and desktop.",
-            ],
-            [
-              "✨",
-              "Exclusive Content",
-              "Premium-only content for active subscribers.",
-            ],
-          ].map(([icon, title, text]) => (
-            <div
-              key={title}
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"
-            >
+      {/* COMMUNITY */}
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-sm font-bold">
-                {icon}
-              </div>
+      <section className="relative z-10 border-y border-white/10 bg-white/[0.015] px-5 py-16">
+        <div className="mx-auto max-w-7xl">
 
-              <h3 className="mt-5 font-bold">
-                {title}
-              </h3>
+          <div className="max-w-3xl">
 
-              <p className="mt-2 text-sm leading-6 text-white/40">
-                {text}
-              </p>
-
+            <div className="text-xs font-black uppercase tracking-[0.3em] text-white/30">
+              HDLink Community
             </div>
-          ))}
-        </div>
-      </section>
 
-      {/* GOZY PLANS */}
-
-      <section
-        id="plans"
-        className="border-t border-white/10 bg-white/[0.015]"
-      >
-        <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8">
-
-          <div className="mx-auto mb-12 max-w-2xl text-center">
-
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/40">
-              Simple Pricing
-            </p>
-
-            <h2 className="mt-3 text-4xl font-bold sm:text-5xl">
-              Choose your access
+            <h2 className="mt-3 text-3xl font-black sm:text-5xl">
+              Stay connected.
+              <br />
+              Never miss an update.
             </h2>
 
-            <p className="mt-4 text-white/45">
-              Plan choose karo aur premium library unlock karo.
+            <p className="mt-5 text-sm leading-7 text-white/40">
+              Join the official HDLink channels for
+              updates, announcements, new releases,
+              premium notifications and community
+              updates.
             </p>
 
           </div>
 
-          {loadingPlans && (
-            <div className="py-12 text-center text-white/50">
-              Loading plans...
-            </div>
-          )}
+          <div className="mt-10 grid gap-5 md:grid-cols-2">
 
-          {plansError && (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-center">
+            <a
+              href={TELEGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group rounded-[30px] border border-sky-400/20 bg-gradient-to-br from-sky-500/15 to-white/[0.03] p-7 transition hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-4xl">
+                  ✈️
+                </div>
 
-              <p className="font-semibold text-red-300">
-                Plans load nahi ho paaye.
+                <span className="rounded-full bg-sky-400/10 px-3 py-1 text-[10px] font-bold text-sky-200">
+                  OFFICIAL
+                </span>
+              </div>
+
+              <h3 className="mt-7 text-2xl font-black">
+                Telegram Channel
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-white/40">
+                Get HDLink updates, new video
+                notifications, announcements and
+                premium community updates.
               </p>
 
-              <p className="mt-2 text-sm text-red-200/60">
-                {plansError}
+              <div className="mt-6 font-bold text-sky-300">
+                Join Telegram →
+              </div>
+            </a>
+
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group rounded-[30px] border border-green-400/20 bg-gradient-to-br from-green-500/15 to-white/[0.03] p-7 transition hover:-translate-y-1"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-4xl">
+                  💬
+                </div>
+
+                <span className="rounded-full bg-green-400/10 px-3 py-1 text-[10px] font-bold text-green-200">
+                  OFFICIAL
+                </span>
+              </div>
+
+              <h3 className="mt-7 text-2xl font-black">
+                WhatsApp Channel
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-white/40">
+                Follow HDLink directly on WhatsApp
+                for important updates, announcements
+                and new premium notifications.
               </p>
 
+              <div className="mt-6 font-bold text-green-300">
+                Join WhatsApp →
+              </div>
+            </a>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* VIDEO PREVIEWS */}
+
+      <section className="relative z-10 px-5 py-20">
+        <div className="mx-auto max-w-7xl">
+
+          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.3em] text-white/30">
+                Premium Preview
+              </div>
+
+              <h2 className="mt-3 text-3xl font-black sm:text-5xl">
+                See what awaits you.
+              </h2>
+
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-white/40">
+                Explore a blurred preview of the
+                HDLink premium library. Full premium
+                access becomes available after
+                activation.
+              </p>
             </div>
-          )}
 
-          {!loadingPlans &&
-            !plansError &&
-            plans.length > 0 && (
-              <div className="grid gap-5 md:grid-cols-3">
+            <div className="rounded-full border border-violet-400/20 bg-violet-400/10 px-4 py-2 text-xs font-bold text-violet-200">
+              🔒 PREMIUM CONTENT
+            </div>
 
-                {plans.slice(0, 3).map(
-                  (plan, index) => (
+          </div>
+
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+
+            {loadingVideos
+              ? Array.from({
+                  length: 12,
+                }).map(
+                  (_, index) => (
                     <div
-                      key={plan.id}
-                      className={`relative rounded-3xl border p-7 ${
-                        index === 1
-                          ? "border-white/40 bg-white/[0.08]"
-                          : "border-white/10 bg-white/[0.03]"
-                      }`}
-                    >
-
-                      {index === 1 && (
-                        <div className="absolute right-5 top-5 rounded-full bg-white px-3 py-1 text-[10px] font-bold uppercase text-black">
-                          Most Popular
-                        </div>
+                      key={index}
+                      className="aspect-video animate-pulse rounded-3xl bg-white/[0.06]"
+                    />
+                  )
+                )
+              : videos.length > 0
+              ? videos.map(
+                  (video, index) => (
+                    <button
+                      key={String(
+                        video.id
                       )}
-
-                      <p className="text-sm text-white/50">
-                        {plan.name}
-                      </p>
-
-                      <div className="mt-5 text-5xl font-black">
-                        ₹
-                        {Number(
-                          plan.price
-                        ).toFixed(0)}
-                      </div>
-
-                      <p className="mt-4 min-h-12 text-sm leading-6 text-white/45">
-                        Premium access for{" "}
-                        {plan.duration_days} days.
-                      </p>
-
-                      <button
-                        onClick={() =>
-                          handleBuyPlan(
-                            plan
+                      onClick={() =>
+                        document
+                          .getElementById(
+                            "plans"
                           )
-                        }
-                        className="mt-7 w-full rounded-full bg-white py-3.5 text-sm font-bold text-black"
-                      >
-                        {hasActiveSubscription
-                          ? "View Premium"
-                          : "Buy Plan"}
-                      </button>
+                          ?.scrollIntoView({
+                            behavior:
+                              "smooth",
+                          })
+                      }
+                      className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] text-left"
+                    >
+                      <div className="relative aspect-video overflow-hidden">
 
-                      <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-sm text-white/60">
-                        <p>✓ No Ads</p>
-                        <p>✓ Full Watch</p>
-                        <p>✓ HD Streaming</p>
-                        <p>✓ Secure Premium Access</p>
-                        <p>
-                          ✓ Active for{" "}
-                          {plan.duration_days} days
-                        </p>
+                        {video.thumbnail_url ? (
+                          <img
+                            src={
+                              video.thumbnail_url
+                            }
+                            alt=""
+                            loading="lazy"
+                            className="h-full w-full scale-110 object-cover blur-[7px] brightness-50 transition duration-500 group-hover:scale-125"
+                          />
+                        ) : (
+                          <div className="h-full w-full bg-gradient-to-br from-violet-900/40 via-black to-blue-900/40" />
+                        )}
+
+                        <div className="absolute inset-0 bg-black/30" />
+
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/30 bg-black/60 text-xl backdrop-blur-xl">
+                            🔒
+                          </div>
+                        </div>
+
+                        <div className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-[9px] font-black uppercase tracking-wider text-white backdrop-blur">
+                          Premium Preview
+                        </div>
+
                       </div>
 
-                    </div>
+                      <div className="p-4">
+                        <div className="line-clamp-1 text-sm font-bold text-white/80">
+                          {video.title ||
+                            `Premium Video ${
+                              index + 1
+                            }`}
+                        </div>
+
+                        <div className="mt-2 text-[10px] text-violet-300/70">
+                          🔒 Unlock with Premium
+                        </div>
+                      </div>
+                    </button>
+                  )
+                )
+              : Array.from({
+                  length: 12,
+                }).map(
+                  (_, index) => (
+                    <button
+                      key={index}
+                      onClick={() =>
+                        document
+                          .getElementById(
+                            "plans"
+                          )
+                          ?.scrollIntoView({
+                            behavior:
+                              "smooth",
+                          })
+                      }
+                      className="relative aspect-video overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-violet-900/30 via-black to-blue-900/30"
+                    >
+                      <div className="absolute inset-0 backdrop-blur-md" />
+
+                      <div className="relative flex h-full flex-col items-center justify-center">
+                        <div className="text-3xl">
+                          🔒
+                        </div>
+
+                        <div className="mt-3 text-xs font-bold text-white/60">
+                          Premium Video
+                        </div>
+                      </div>
+                    </button>
                   )
                 )}
 
-              </div>
-            )}
-
-          {!loadingPlans &&
-            !plansError &&
-            plans.length === 0 && (
-              <div className="py-12 text-center text-white/50">
-                अभी कोई active Gozy plan उपलब्ध नहीं है।
-              </div>
-            )}
+          </div>
 
         </div>
       </section>
+
+      {/* PLANS */}
+
+      <section
+        id="plans"
+        className="relative z-10 border-t border-white/10 px-5 py-24"
+      >
+        <div className="mx-auto max-w-7xl">
+
+          <div className="mx-auto max-w-3xl text-center">
+
+            <div className="inline-flex rounded-full border border-violet-400/20 bg-violet-400/10 px-4 py-2 text-xs font-bold text-violet-200">
+              VIP PREMIUM PLANS
+            </div>
+
+            <h2 className="mt-6 text-4xl font-black tracking-tight sm:text-6xl">
+              Choose your access.
+            </h2>
+
+            <p className="mt-5 text-sm leading-7 text-white/40 sm:text-base">
+              Simple plans. Secure account-based
+              access. Manual payment verification.
+              Choose the access that works for you.
+            </p>
+
+          </div>
+
+          <div className="mt-14 grid gap-6 lg:grid-cols-3">
+
+            {PLAN_CONFIG.map(
+              (config) => {
+                const plan =
+                  findPlan(
+                    config.key
+                  );
+
+                const lifetime =
+                  config.key ===
+                  "lifetime";
+
+                const popular =
+                  config.key ===
+                  "three-months";
+
+                return (
+                  <div
+                    key={
+                      config.key
+                    }
+                    className={`relative overflow-hidden rounded-[35px] border p-7 shadow-2xl transition hover:-translate-y-2 ${
+                      popular
+                        ? "border-violet-400/40 bg-gradient-to-b from-violet-500/15 to-white/[0.03]"
+                        : lifetime
+                        ? "border-amber-400/30 bg-gradient-to-b from-amber-500/10 to-white/[0.03]"
+                        : "border-white/10 bg-white/[0.035]"
+                    }`}
+                  >
+
+                    {popular && (
+                      <div className="absolute right-5 top-5 rounded-full bg-violet-400 px-3 py-1 text-[9px] font-black text-black">
+                        ⭐ MOST POPULAR
+                      </div>
+                    )}
+
+                    {lifetime && (
+                      <div className="absolute right-5 top-5 rounded-full bg-amber-300 px-3 py-1 text-[9px] font-black text-black">
+                        👑 VIP LIFETIME
+                      </div>
+                    )}
+
+                    <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
+                      {config.badge}
+                    </div>
+
+                    <h3 className="mt-8 text-2xl font-black">
+                      {config.title}
+                    </h3>
+
+                    <div className="mt-5">
+                      <span className="text-5xl font-black">
+                        ₹{config.price}
+                      </span>
+
+                      <span className="ml-2 text-sm text-white/30">
+                        / access
+                      </span>
+                    </div>
+
+                    <p className="mt-4 text-sm text-white/40">
+                      {config.subtitle}
+                    </p>
+
+                    <div className="mt-7 space-y-3">
+                      {[
+                        "Premium video access",
+                        "Account based access",
+                        "Manual payment verification",
+                        "HDLink premium library",
+                        lifetime
+                          ? "Lifetime VIP access"
+                          : "Secure premium account",
+                      ].map(
+                        (feature) => (
+                          <div
+                            key={
+                              feature
+                            }
+                            className="flex items-center gap-3 text-sm text-white/65"
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-400/10 text-[10px] text-green-300">
+                              ✓
+                            </span>
+
+                            {feature}
+                          </div>
+                        )
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        selectPlan(
+                          config.key
+                        )
+                      }
+                      disabled={
+                        !plan
+                      }
+                      className={`mt-9 w-full rounded-full py-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        lifetime
+                          ? "bg-amber-300 text-black hover:bg-amber-200"
+                          : "bg-white text-black hover:bg-white/90"
+                      }`}
+                    >
+                      Pay Now — ₹
+                      {config.price} →
+                    </button>
+
+                    {!plan && (
+                      <p className="mt-3 text-center text-[10px] text-red-300/70">
+                        Plan not configured
+                      </p>
+                    )}
+
+                    <p className="mt-4 text-center text-[10px] text-white/25">
+                      Secure account-based purchase
+                      • Admin verification
+                    </p>
+
+                  </div>
+                );
+              }
+            )}
+
+          </div>
+
+          <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.025] p-5 text-center text-xs text-white/35">
+            🔐 Payment is manually verified.
+            Premium access activates after admin
+            approval.
+          </div>
+
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+
+      <section className="relative z-10 px-5 pb-24">
+        <div className="mx-auto max-w-7xl">
+
+          <div className="overflow-hidden rounded-[40px] border border-violet-400/20 bg-gradient-to-br from-violet-500/15 via-white/[0.04] to-blue-500/10 p-8 text-center sm:p-14">
+
+            <div className="text-5xl">
+              👑
+            </div>
+
+            <h2 className="mt-6 text-3xl font-black sm:text-5xl">
+              Ready to unlock HDLink?
+            </h2>
+
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/40">
+              Choose your plan, create your secure
+              account and activate premium access
+              after payment verification.
+            </p>
+
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+
+              <button
+                onClick={() =>
+                  document
+                    .getElementById(
+                      "plans"
+                    )
+                    ?.scrollIntoView({
+                      behavior:
+                        "smooth",
+                    })
+                }
+                className="rounded-full bg-white px-8 py-4 text-sm font-black text-black"
+              >
+                View Plans →
+              </button>
+
+              <a
+                href={TELEGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full border border-sky-400/30 bg-sky-400/10 px-8 py-4 text-sm font-black text-sky-200"
+              >
+                ✈️ Telegram
+              </a>
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* FOOTER */}
+
+      <footer className="relative z-10 border-t border-white/10 px-5 py-10">
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-center sm:flex-row sm:text-left">
+
+          <div>
+            <div className="font-black">
+              HDLink
+            </div>
+
+            <div className="mt-1 text-xs text-white/25">
+              VIP Premium Access
+            </div>
+          </div>
+
+          <div className="text-xs text-white/25">
+            Premium access • Secure account •
+            Manual verification
+          </div>
+
+        </div>
+      </footer>
 
       {/* PAYMENT MODAL */}
 
       {selectedPlan && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-black/90 p-5 backdrop-blur-xl">
 
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#111111] p-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-[35px] border border-white/10 bg-[#0b0b0b] p-7 shadow-2xl sm:p-9">
 
-            {paymentSubmitted &&
-            approvalWaiting &&
-            !paymentApproved ? (
+            <div className="flex items-start justify-between gap-5">
 
-              <div className="py-5 text-center">
-
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-blue-500/20 bg-blue-500/10 text-3xl">
-                  🔔
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.25em] text-white/30">
+                  Payment
                 </div>
 
-                <h3 className="mt-6 text-2xl font-bold">
-                  ADMIN APPROVAL WAITING
-                </h3>
-
-                <p className="mt-4 text-sm leading-6 text-white/50">
-                  आपका Gozy payment request admin verification
-                  के लिए भेज दिया गया है।
-                </p>
-
-                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-left">
-
-                  <div className="flex items-center gap-3">
-
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-500/10">
-                      ⏳
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold">
-                        Verification in progress
-                      </p>
-
-                      <p className="mt-1 text-xs text-white/40">
-                        Admin आपके payment को verify कर रहा है।
-                      </p>
-                    </div>
-
-                  </div>
-
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
-
-                  <p className="text-sm font-semibold text-green-300">
-                    🔔 Notifications
-                  </p>
-
-                  <p className="mt-1 text-xs leading-5 text-green-200/60">
-                    Payment approve होने पर आपको notification
-                    भेजने की कोशिश की जाएगी।
-                  </p>
-
-                </div>
-
-                <p className="mt-5 text-xs leading-5 text-white/30">
-                  Same UTR दोबारा submit न करें।
-                  <br />
-                  आप यह window safely close कर सकते हैं।
-                </p>
-
-                <button
-                  onClick={
-                    closePaymentModal
-                  }
-                  className="mt-6 w-full rounded-full border border-white/15 bg-white/[0.04] py-3.5 text-sm font-bold"
-                >
-                  Close & Wait for Approval
-                </button>
-
+                <h2 className="mt-2 text-3xl font-black">
+                  {selectedPlan.name}
+                </h2>
               </div>
 
-            ) : paymentSubmitted &&
-              paymentApproved ? (
+              <button
+                onClick={
+                  closePayment
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/50 hover:bg-white/10"
+              >
+                ✕
+              </button>
 
-              <div className="py-5 text-center">
+            </div>
 
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-green-500/20 bg-green-500/10 text-3xl">
-                  ✓
-                </div>
+            <div className="mt-7 rounded-3xl border border-violet-400/20 bg-violet-400/10 p-5">
 
-                <h3 className="mt-6 text-2xl font-bold">
-                  PAYMENT APPROVED
-                </h3>
-
-                <p className="mt-4 text-sm leading-6 text-white/50">
-                  आपका Gozy payment successfully verify हो गया है।
-                </p>
-
-                <div className="mt-6 rounded-2xl border border-green-500/20 bg-green-500/10 p-5">
-
-                  <p className="text-lg font-bold text-green-300">
-                    🎉 Premium Activated
-                  </p>
-
-                  <p className="mt-2 text-xs leading-5 text-green-200/60">
-                    अब आप सभी Gozy premium videos access कर सकते हैं।
-                  </p>
-
-                </div>
-
-                <a
-                  href="/premium"
-                  className="mt-6 block w-full rounded-full bg-white py-3.5 text-sm font-bold text-black"
-                >
-                  Watch Premium Videos →
-                </a>
-
-                <button
-                  onClick={
-                    closePaymentModal
-                  }
-                  className="mt-3 w-full rounded-full border border-white/15 bg-white/[0.04] py-3.5 text-sm font-bold"
-                >
-                  Close
-                </button>
-
+              <div className="text-xs text-white/35">
+                Amount to Pay
               </div>
 
-            ) : (
+              <div className="mt-1 text-4xl font-black">
+                ₹{selectedPlan.price}
+              </div>
 
-              <>
-                <div className="flex items-center justify-between">
+            </div>
 
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">
-                      Gozy Payment
-                    </p>
+            {/* QR PAYMENT */}
 
-                    <h3 className="mt-1 text-2xl font-bold">
-                      {selectedPlan.name}
-                    </h3>
-                  </div>
+            <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-center">
 
-                  <button
-                    onClick={
-                      closePaymentModal
-                    }
-                    className="rounded-full border border-white/10 px-3 py-2 text-white/60"
-                  >
-                    ✕
-                  </button>
+              <div className="text-xs font-bold uppercase tracking-wider text-white/30">
+                Scan & Pay
+              </div>
 
-                </div>
+              <div className="mt-4 flex justify-center">
 
-                <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
-
-                  <p className="text-sm text-white/50">
-                    Amount to pay
-                  </p>
-
-                  <p className="mt-1 text-4xl font-black">
-                    ₹
-                    {Number(
-                      selectedPlan.price
-                    ).toFixed(0)}
-                  </p>
-
-                </div>
-
-                <div className="mt-6 text-center">
-
-                  <p className="text-sm font-semibold">
-                    Scan the payment QR to pay
-                  </p>
-
-                  <div className="mx-auto mt-4 flex w-fit items-center justify-center rounded-2xl bg-white p-4">
-
-                    <img
-                      src="/navi-qr.png"
-                      alt="Gozy Payment QR"
-                      className="h-56 w-56 object-contain"
-                    />
-
-                  </div>
-
-                  <p className="mt-3 text-xs leading-5 text-white/40">
-                    Pay exactly ₹
-                    {Number(
-                      selectedPlan.price
-                    ).toFixed(0)}{" "}
-                    and keep your UTR.
-                  </p>
-
-                </div>
-
-                <div className="mt-6">
-
-                  <label className="text-sm font-semibold">
-                    UTR / Transaction ID
-                  </label>
-
-                  <input
-                    value={utr}
-                    onChange={(e) =>
-                      setUtr(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Enter your UTR / Transaction ID"
-                    className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none placeholder:text-white/30"
+                <div className="rounded-3xl bg-white p-3 shadow-2xl">
+                  <img
+                    src="/hdlink-qr.png"
+                    alt="HDLink Payment QR Code"
+                    className="h-64 w-64 object-contain sm:h-72 sm:w-72"
                   />
-
                 </div>
 
-                {paymentError && (
-                  <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
-                    {paymentError}
-                  </div>
-                )}
+              </div>
 
-                {paymentMessage && (
-                  <div className="mt-4 rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm text-green-300">
-                    {paymentMessage}
-                  </div>
-                )}
+              <p className="mt-4 text-xs leading-5 text-white/40">
+                Scan this QR code using any supported
+                UPI app and pay exactly{" "}
+                <span className="font-bold text-white/80">
+                  ₹{selectedPlan.price}
+                </span>
+                .
+              </p>
 
-                <button
-                  onClick={
-                    submitPaymentRequest
-                  }
-                  disabled={
-                    submittingPayment
-                  }
-                  className="mt-5 w-full rounded-full bg-white py-3.5 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {submittingPayment
-                    ? "Submitting..."
-                    : "I Have Paid — Submit Request"}
-                </button>
+            </div>
 
-                <p className="mt-4 text-center text-xs leading-5 text-white/30">
-                  Your Gozy plan will be activated after payment verification.
-                </p>
-              </>
-            )}
+            {/* PAYMENT INSTRUCTIONS */}
+
+            <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+
+              <div className="text-xs font-bold uppercase tracking-wider text-white/30">
+                Payment Instructions
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-white/45">
+                Complete the payment using the QR
+                code above and enter your UTR /
+                Transaction ID below. Your payment
+                will be manually verified by the admin.
+              </p>
+
+            </div>
+
+            <form
+              onSubmit={
+                submitPayment
+              }
+              className="mt-6"
+            >
+
+              <label className="text-xs font-bold text-white/50">
+                UTR / Transaction ID
+              </label>
+
+              <input
+                value={utr}
+                onChange={(e) =>
+                  setUtr(
+                    e.target.value
+                  )
+                }
+                placeholder="Enter UTR / Transaction ID"
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30"
+              />
+
+              {error && (
+                <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
+
+              {message && (
+                <div className="mt-4 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
+                  {message}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="mt-5 w-full rounded-full bg-white py-4 text-sm font-black text-black disabled:opacity-50"
+              >
+                {submitting
+                  ? "Submitting..."
+                  : `Submit Payment — ₹${selectedPlan.price}`}
+              </button>
+
+            </form>
 
           </div>
         </div>
       )}
 
-      {/* ABOUT */}
+      {/* PAYMENT WAITING */}
 
-      <section
-        id="about"
-        className="border-t border-white/10"
-      >
-        <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
+      {paymentSubmitted && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 p-5 backdrop-blur-xl">
 
-          <div className="grid gap-10 md:grid-cols-3">
+          <div className="w-full max-w-md rounded-[35px] border border-white/10 bg-[#0b0b0b] p-8 text-center shadow-2xl">
 
-            <div>
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-green-400/20 bg-green-400/10 text-3xl text-green-300">
+              ✓
+            </div>
 
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-white font-black text-black">
-                G
+            <h2 className="mt-7 text-3xl font-black">
+              Payment Submitted
+            </h2>
+
+            <p className="mt-4 text-sm leading-7 text-white/40">
+              Your payment request has been
+              submitted successfully.
+            </p>
+
+            <div className="mt-7 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+
+              <div className="text-xs text-white/30">
+                Status
               </div>
 
-              <h3 className="font-bold">
-                Gozy
-              </h3>
+              <div className="mt-2 font-bold text-yellow-300">
+                ⏳ Waiting for Admin Approval
+              </div>
 
-              <p className="mt-3 text-sm leading-6 text-white/40">
-                A modern premium video streaming platform
-                built for a clean and smooth viewing experience.
+              <p className="mt-3 text-xs leading-6 text-white/30">
+                This page automatically checks your
+                payment status.
               </p>
 
             </div>
 
-            <div>
-
-              <h3 className="font-semibold">
-                Platform
-              </h3>
-
-              <div className="mt-4 space-y-3 text-sm text-white/40">
-                <p>No Ads</p>
-                <p>Full Watch</p>
-                <p>HD Streaming</p>
-                <p>Premium Videos</p>
-              </div>
-
-            </div>
-
-            <div>
-
-              <h3 className="font-semibold">
-                Support
-              </h3>
-
-              <div className="mt-4 space-y-3 text-sm text-white/40">
-                <p>Help Center</p>
-                <p>Contact Us</p>
-                <p>Terms & Privacy</p>
-              </div>
-
-            </div>
-
           </div>
-
-          <div className="mt-16 border-t border-white/10 pt-7 text-xs text-white/30">
-            © 2026 Gozy. All rights reserved.
-          </div>
-
         </div>
-      </section>
+      )}
 
     </main>
   );

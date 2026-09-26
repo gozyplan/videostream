@@ -6,8 +6,20 @@ import {
   useEffect,
   useState,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+type Plan = {
+  id: number;
+  name: string;
+  price: number;
+  duration_days: number;
+  is_active: boolean;
+  source?: string | null;
+};
 
 function RegisterForm() {
   const router = useRouter();
@@ -20,81 +32,127 @@ function RegisterForm() {
   const [confirmPassword, setConfirmPassword] =
     useState("");
 
-  const [planId, setPlanId] = useState<string | null>(
-    null
-  );
+  const [plan, setPlan] = useState<Plan | null>(null);
 
-  const [loading, setLoading] = useState(false);
-  const [checkingUser, setCheckingUser] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] =
+    useState(false);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  // ============================================================
-  // RESTORE GOZY PLAN
-  // ============================================================
-
   useEffect(() => {
-    const savedPlan =
-      urlPlanId ||
-      localStorage.getItem("gozy_pending_plan_id");
-
-    if (savedPlan) {
-      setPlanId(savedPlan);
-
-      localStorage.setItem(
-        "gozy_pending_plan_id",
-        savedPlan
-      );
-    }
-
-    setCheckingUser(false);
+    initialize();
   }, [urlPlanId]);
 
-  // ============================================================
-  // CHECK EXISTING SESSION
-  // ============================================================
+  async function initialize() {
+    setLoading(true);
+    setError("");
 
-  useEffect(() => {
-    async function checkSession() {
+    try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (session?.user) {
-        const savedPlan =
-          urlPlanId ||
-          localStorage.getItem(
-            "gozy_pending_plan_id"
-          );
+      const savedPlanId =
+        urlPlanId ||
+        localStorage.getItem(
+          "hdlink_pending_plan_id"
+        );
 
-        if (savedPlan) {
+      /*
+       * Already logged in
+       */
+      if (session?.user) {
+        if (savedPlanId) {
           router.replace(
-            `/premium?plan=${encodeURIComponent(
-              savedPlan
+            `/hdlink?plan=${encodeURIComponent(
+              savedPlanId
             )}`
           );
         } else {
-          router.replace("/premium");
+          router.replace("/hdlink");
         }
 
         return;
       }
 
-      setCheckingUser(false);
+      /*
+       * No plan selected
+       */
+      if (!savedPlanId) {
+        setPlan(null);
+        return;
+      }
+
+      const numericId = Number(savedPlanId);
+
+      if (!Number.isFinite(numericId)) {
+        localStorage.removeItem(
+          "hdlink_pending_plan_id"
+        );
+
+        setError("Invalid plan selection.");
+        return;
+      }
+
+      /*
+       * Load HDLink plan
+       */
+      const {
+        data,
+        error: planError,
+      } = await supabase
+        .from("plans")
+        .select(
+          "id,name,price,duration_days,is_active,source"
+        )
+        .eq("id", numericId)
+        .eq("is_active", true)
+        .eq("source", "hdlink")
+        .maybeSingle();
+
+      if (planError) {
+        throw planError;
+      }
+
+      if (!data) {
+        localStorage.removeItem(
+          "hdlink_pending_plan_id"
+        );
+
+        setError(
+          "Selected HDLink plan is not available."
+        );
+
+        return;
+      }
+
+      setPlan(data as Plan);
+
+      localStorage.setItem(
+        "hdlink_pending_plan_id",
+        String(data.id)
+      );
+    } catch (err: any) {
+      console.error(
+        "Register initialize error:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Could not load registration page."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    checkSession();
-  }, [router, urlPlanId]);
-
-  // ============================================================
-  // CREATE ACCOUNT
-  // ============================================================
+  }
 
   async function handleRegister(
-    e: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
-    e.preventDefault();
+    event.preventDefault();
 
     setError("");
     setMessage("");
@@ -123,424 +181,383 @@ function RegisterForm() {
       return;
     }
 
-    setLoading(true);
+    const storedPlanId =
+      localStorage.getItem(
+        "hdlink_pending_plan_id"
+      );
+
+    const selectedPlanId =
+      plan?.id ||
+      (storedPlanId
+        ? Number(storedPlanId)
+        : NaN);
+
+    if (
+      !selectedPlanId ||
+      !Number.isFinite(selectedPlanId)
+    ) {
+      setError(
+        "Please select an HDLink plan first."
+      );
+      return;
+    }
+
+    localStorage.setItem(
+      "hdlink_pending_plan_id",
+      String(selectedPlanId)
+    );
+
+    setRegistering(true);
 
     try {
-      // --------------------------------------------------------
-      // SAVE SELECTED PLAN
-      // --------------------------------------------------------
-
-      const selectedPlanId =
-        urlPlanId ||
-        planId ||
-        localStorage.getItem(
-          "gozy_pending_plan_id"
-        );
-
-      if (selectedPlanId) {
-        localStorage.setItem(
-          "gozy_pending_plan_id",
-          selectedPlanId
-        );
-      }
-
-      // --------------------------------------------------------
-      // CREATE USER
-      // --------------------------------------------------------
-
       const {
         data,
-        error: registerError,
+        error: signupError,
       } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
       });
 
-      if (registerError) {
+      if (signupError) {
         console.error(
-          "GOZY register error:",
-          registerError
+          "Registration error:",
+          signupError
         );
 
         setError(
-          registerError.message ||
-            "Account could not be created."
+          signupError.message ||
+            "Registration failed."
         );
 
         return;
       }
 
-      // --------------------------------------------------------
-      // SESSION AVAILABLE
-      // --------------------------------------------------------
-
-      if (data.session?.user) {
-        if (selectedPlanId) {
-          router.replace(
-            `/premium?plan=${encodeURIComponent(
-              selectedPlanId
-            )}`
-          );
-        } else {
-          router.replace("/premium");
-        }
+      if (!data.user) {
+        setError(
+          "Account could not be created. Please try again."
+        );
 
         return;
       }
 
-      // --------------------------------------------------------
-      // EMAIL CONFIRMATION
-      // --------------------------------------------------------
+      /*
+       * Email confirmation is enabled
+       */
+      if (!data.session) {
+        setMessage(
+          "Account created successfully. Please confirm your email, then login to continue."
+        );
 
-      setMessage(
-        "Account created successfully. Please check your email and confirm your account before logging in."
+        return;
+      }
+
+      /*
+       * Account created and logged in
+       */
+      router.replace(
+        `/hdlink?plan=${encodeURIComponent(
+          String(selectedPlanId)
+        )}`
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error(
-        "Register unexpected error:",
+        "Registration error:",
         err
       );
 
       setError(
-        "Something went wrong. Please try again."
+        err?.message ||
+          "Something went wrong. Please try again."
       );
     } finally {
-      setLoading(false);
+      setRegistering(false);
     }
   }
-
-  // ============================================================
-  // LOGIN
-  // ============================================================
-
-  function goToLogin() {
-    setError("");
-
-    const selectedPlanId =
-      urlPlanId ||
-      planId ||
-      localStorage.getItem(
-        "gozy_pending_plan_id"
-      );
-
-    if (selectedPlanId) {
-      localStorage.setItem(
-        "gozy_pending_plan_id",
-        selectedPlanId
-      );
-
-      window.location.href =
-        `/auth/login?plan=${encodeURIComponent(
-          selectedPlanId
-        )}`;
-
-      return;
-    }
-
-    window.location.href =
-      "/auth/login";
-  }
-
-  // ============================================================
-  // BACK
-  // ============================================================
 
   function goBack() {
     const selectedPlanId =
-      urlPlanId ||
-      planId ||
+      plan?.id ||
       localStorage.getItem(
-        "gozy_pending_plan_id"
+        "hdlink_pending_plan_id"
       );
 
     if (selectedPlanId) {
-      window.location.href =
-        `/?plan=${encodeURIComponent(
-          selectedPlanId
-        )}#plans`;
-
-      return;
+      router.push(
+        `/hdlink?plan=${encodeURIComponent(
+          String(selectedPlanId)
+        )}`
+      );
+    } else {
+      router.push("/hdlink");
     }
-
-    window.location.href = "/#plans";
   }
 
-  // ============================================================
-  // LOADING
-  // ============================================================
+  function goToLogin() {
+    const selectedPlanId =
+      plan?.id ||
+      localStorage.getItem(
+        "hdlink_pending_plan_id"
+      );
 
-  if (checkingUser) {
+    if (selectedPlanId) {
+      router.push(
+        `/auth/login?plan=${encodeURIComponent(
+          String(selectedPlanId)
+        )}`
+      );
+    } else {
+      router.push("/auth/login");
+    }
+  }
+
+  if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#030303] text-white">
         <div className="text-center">
-
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl">
-            G
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+            H
           </div>
 
-          <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+          <div className="mx-auto mt-6 h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
           <p className="mt-4 text-sm text-white/40">
-            Loading GOZY...
+            Loading...
           </p>
-
         </div>
       </main>
     );
   }
 
-  // ============================================================
-  // PAGE
-  // ============================================================
-
   return (
-    <main className="min-h-screen bg-[#080808] px-5 py-10 text-white">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#030303] px-5 py-12 text-white">
+      {/* Background */}
 
-      <div className="mx-auto flex min-h-[90vh] max-w-md items-center justify-center">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-1/2 top-[-250px] h-[600px] w-[800px] -translate-x-1/2 rounded-full bg-violet-600/10 blur-[150px]" />
 
-        <div className="w-full">
+        <div className="absolute bottom-[-250px] right-[-200px] h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-[150px]" />
+      </div>
 
-          {/* ==================================================
-              LOGO
-          ================================================== */}
+      <div className="relative z-10 w-full max-w-md">
+        {/* Logo */}
 
-          <div className="mb-8 text-center">
+        <button
+          type="button"
+          onClick={goBack}
+          disabled={registering}
+          className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl transition hover:scale-105 disabled:cursor-not-allowed"
+        >
+          H
+        </button>
 
-            <button
-              type="button"
-              onClick={goBack}
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl transition hover:scale-105"
-            >
-              G
-            </button>
+        {/* Brand */}
 
-            <div className="mt-4 text-xl font-black tracking-tight">
-              GOZY
-            </div>
-
-            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30">
-              Premium Streaming
-            </div>
-
+        <div className="mt-5 text-center">
+          <div className="text-2xl font-black">
+            HDLink
           </div>
 
-          {/* ==================================================
-              CARD
-          ================================================== */}
+          <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.3em] text-white/30">
+            VIP Premium
+          </div>
+        </div>
 
-          <div className="rounded-[30px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl sm:p-8">
+        {/* Card */}
 
-            <div>
+        <div className="mt-8 rounded-[35px] border border-white/10 bg-white/[0.035] p-7 shadow-2xl sm:p-9">
+          {/* Heading */}
 
-              <h1 className="text-3xl font-black tracking-tight">
-                Create your account
-              </h1>
-
-              <p className="mt-2 text-sm leading-6 text-white/40">
-                Create your GOZY account to continue.
-              </p>
-
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.25em] text-violet-300/60">
+              Create Account
             </div>
 
-            {/* ==================================================
-                PLAN SAVED
-            ================================================== */}
+            <h1 className="mt-3 text-3xl font-black">
+              Join HDLink Premium
+            </h1>
 
-            {planId && (
-              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="mt-3 text-sm leading-6 text-white/40">
+              Create your secure account to
+              continue with your selected
+              HDLink premium plan.
+            </p>
+          </div>
 
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-black">
-                  ✓
-                </div>
+          {/* Selected Plan */}
 
-                <div>
-
-                  <div className="text-sm font-bold text-white/90">
-                    GOZY plan saved
-                  </div>
-
-                  <div className="mt-0.5 text-xs text-white/35">
-                    Your selected plan will continue after account creation.
-                  </div>
-
-                </div>
-
+          {plan && (
+            <div className="mt-7 rounded-3xl border border-violet-400/20 bg-violet-400/10 p-5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-violet-200/60">
+                Selected Plan
               </div>
-            )}
 
-            {/* ==================================================
-                FORM
-            ================================================== */}
+              <div className="mt-2 flex items-center justify-between gap-4">
+                <div>
+                  <div className="font-black">
+                    {plan.name}
+                  </div>
 
-            <form
-              onSubmit={handleRegister}
-              className="mt-7"
-            >
+                  <div className="mt-1 text-xs text-white/35">
+                    {plan.duration_days} day
+                    {plan.duration_days !== 1
+                      ? "s"
+                      : ""}{" "}
+                    HDLink Premium
+                  </div>
+                </div>
 
-              {/* EMAIL */}
+                <div className="text-2xl font-black">
+                  ₹{plan.price}
+                </div>
+              </div>
+            </div>
+          )}
 
-              <label
-                htmlFor="register-email"
-                className="mb-2 block text-sm font-semibold text-white/70"
-              >
-                Email / Gmail
+          {/* No Plan */}
+
+          {!plan && !error && (
+            <div className="mt-7 rounded-3xl border border-yellow-400/20 bg-yellow-400/10 p-5 text-sm leading-6 text-yellow-200">
+              Select an HDLink plan first to
+              continue.
+            </div>
+          )}
+
+          {/* Error */}
+
+          {error && (
+            <div className="mt-7 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
+              {error}
+            </div>
+          )}
+
+          {/* Success */}
+
+          {message && (
+            <div className="mt-7 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm leading-6 text-green-300">
+              {message}
+            </div>
+          )}
+
+          {/* Form */}
+
+          <form
+            onSubmit={handleRegister}
+            className="mt-7 space-y-5"
+          >
+            {/* Email */}
+
+            <div>
+              <label className="text-xs font-bold text-white/50">
+                Email Address
               </label>
 
               <input
-                id="register-email"
                 type="email"
-                autoComplete="email"
                 value={email}
-                onChange={(e) =>
-                  setEmail(e.target.value)
+                onChange={(event) =>
+                  setEmail(event.target.value)
                 }
-                placeholder="you@gmail.com"
-                disabled={loading}
-                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+                placeholder="you@example.com"
+                autoComplete="email"
+                disabled={registering}
+                required
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-white/30 disabled:opacity-50"
               />
+            </div>
 
-              {/* PASSWORD */}
+            {/* Password */}
 
-              <label
-                htmlFor="register-password"
-                className="mb-2 mt-5 block text-sm font-semibold text-white/70"
-              >
+            <div>
+              <label className="text-xs font-bold text-white/50">
                 Password
               </label>
 
               <input
-                id="register-password"
                 type="password"
-                autoComplete="new-password"
                 value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
+                onChange={(event) =>
+                  setPassword(event.target.value)
                 }
-                placeholder="Create a password"
-                disabled={loading}
-                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+                placeholder="Minimum 6 characters"
+                autoComplete="new-password"
+                disabled={registering}
+                required
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-white/30 disabled:opacity-50"
               />
+            </div>
 
-              {/* CONFIRM PASSWORD */}
+            {/* Confirm Password */}
 
-              <label
-                htmlFor="register-confirm-password"
-                className="mb-2 mt-5 block text-sm font-semibold text-white/70"
-              >
+            <div>
+              <label className="text-xs font-bold text-white/50">
                 Confirm Password
               </label>
 
               <input
-                id="register-confirm-password"
                 type="password"
-                autoComplete="new-password"
                 value={confirmPassword}
-                onChange={(e) =>
+                onChange={(event) =>
                   setConfirmPassword(
-                    e.target.value
+                    event.target.value
                   )
                 }
-                placeholder="Repeat your password"
-                disabled={loading}
-                className="w-full rounded-2xl border border-white/10 bg-black px-4 py-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30 disabled:opacity-50"
+                placeholder="Enter password again"
+                autoComplete="new-password"
+                disabled={registering}
+                required
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-white/30 disabled:opacity-50"
               />
-
-              {/* ERROR */}
-
-              {error && (
-                <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm leading-6 text-red-300">
-                  {error}
-                </div>
-              )}
-
-              {/* SUCCESS */}
-
-              {message && (
-                <div className="mt-5 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm leading-6 text-green-300">
-                  {message}
-                </div>
-              )}
-
-              {/* CREATE ACCOUNT */}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-6 w-full rounded-full bg-white px-5 py-4 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loading
-                  ? "Creating Account..."
-                  : "Create Account"}
-              </button>
-
-            </form>
-
-            {/* ==================================================
-                LOGIN
-            ================================================== */}
-
-            <div className="mt-7 border-t border-white/10 pt-6 text-center">
-
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/25">
-                Already have an account?
-              </div>
-
-              <button
-                type="button"
-                onClick={goToLogin}
-                className="mt-3 text-sm font-black text-white transition hover:text-white/70"
-              >
-                Login →
-              </button>
-
             </div>
 
+            {/* Submit */}
+
+            <button
+              type="submit"
+              disabled={
+                registering || !plan
+              }
+              className="w-full rounded-full bg-white py-4 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {registering
+                ? "Creating Account..."
+                : "Create Account & Continue →"}
+            </button>
+          </form>
+
+          {/* Security */}
+
+          <div className="mt-6 text-center text-xs text-white/25">
+            Secure account-based access •
+            Manual payment verification
           </div>
-
-          {/* ==================================================
-              BACK
-          ================================================== */}
-
-          <button
-            type="button"
-            onClick={goBack}
-            className="mx-auto mt-7 block text-xs font-semibold text-white/30 transition hover:text-white/70"
-          >
-            ← Back to GOZY
-          </button>
-
         </div>
 
-      </div>
+        {/* Login */}
 
+        <button
+          type="button"
+          onClick={goToLogin}
+          disabled={registering}
+          className="mt-6 w-full text-center text-sm text-white/40 transition hover:text-white disabled:cursor-not-allowed"
+        >
+          Already have an account?
+          <span className="ml-1 font-bold text-white/70">
+            Login
+          </span>
+        </button>
+      </div>
     </main>
   );
 }
-
-// ============================================================
-// SUSPENSE
-// ============================================================
 
 export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
-
-          <div className="text-center">
-
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black shadow-2xl">
-              G
-            </div>
-
-            <div className="mx-auto mt-5 h-7 w-7 animate-spin rounded-full border-2 border-white/10 border-t-white" />
-
-            <p className="mt-4 text-sm text-white/40">
-              Loading GOZY...
-            </p>
-
+        <main className="flex min-h-screen items-center justify-center bg-[#030303] text-white">
+          <div className="text-sm text-white/40">
+            Loading...
           </div>
-
         </main>
       }
     >

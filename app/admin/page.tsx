@@ -40,55 +40,66 @@ export default function AdminPage() {
     setLoading(true);
     setError("");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      setError("Please login first.");
+      if (!user) {
+        setError("Please login first.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError || !profile?.is_admin) {
+        setError("You are not authorized to access this page.");
+        setLoading(false);
+        return;
+      }
+
+      setIsAdmin(true);
+
+      const { data: plansData, error: plansError } = await supabase
+        .from("plans")
+        .select("id, name, price, duration_days")
+        .order("duration_days", { ascending: true });
+
+      if (plansError) {
+        setError(plansError.message);
+        setLoading(false);
+        return;
+      }
+
+      const { data: requestData, error: requestError } = await supabase
+        .from("payment_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (requestError) {
+        setError(requestError.message);
+        setLoading(false);
+        return;
+      }
+
+      setPlans(plansData || []);
+      setRequests(requestData || []);
+    } catch (err: unknown) {
+      console.error("Admin load error:", err);
+
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Could not load admin panel.");
+      }
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .single();
-
-    if (profileError || !profile?.is_admin) {
-      setError("You are not authorized to access this page.");
-      setLoading(false);
-      return;
-    }
-
-    setIsAdmin(true);
-
-    const { data: plansData, error: plansError } = await supabase
-      .from("plans")
-      .select("id, name, price, duration_days")
-      .order("duration_days", { ascending: true });
-
-    if (plansError) {
-      setError(plansError.message);
-      setLoading(false);
-      return;
-    }
-
-    const { data: requestData, error: requestError } = await supabase
-      .from("payment_requests")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (requestError) {
-      setError(requestError.message);
-      setLoading(false);
-      return;
-    }
-
-    setPlans(plansData || []);
-    setRequests(requestData || []);
-    setLoading(false);
   }
 
   function getPlan(planId: number) {
@@ -100,26 +111,38 @@ export default function AdminPage() {
       "Are you sure you want to approve this payment?"
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setProcessingId(id);
     setError("");
 
-    const { error } = await supabase.rpc(
-      "approve_payment_request",
-      {
-        request_id: id,
+    try {
+      const { error: rpcError } = await supabase.rpc(
+        "approve_payment_request",
+        {
+          request_id: id,
+        }
+      );
+
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
       }
-    );
 
-    if (error) {
-      setError(error.message);
+      await loadAdminData();
+    } catch (err: unknown) {
+      console.error("Approve payment error:", err);
+
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Could not approve payment.");
+      }
+    } finally {
       setProcessingId(null);
-      return;
     }
-
-    await loadAdminData();
-    setProcessingId(null);
   }
 
   async function rejectPayment(id: number) {
@@ -127,35 +150,53 @@ export default function AdminPage() {
       "Enter rejection reason (optional):"
     );
 
-    if (note === null) return;
+    if (note === null) {
+      return;
+    }
 
     setProcessingId(id);
     setError("");
 
-    const { error } = await supabase.rpc(
-      "reject_payment_request",
-      {
-        request_id: id,
-        note: note || null,
+    try {
+      const { error: rpcError } = await supabase.rpc(
+        "reject_payment_request",
+        {
+          request_id: id,
+          note: note || null,
+        }
+      );
+
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
       }
-    );
 
-    if (error) {
-      setError(error.message);
+      await loadAdminData();
+    } catch (err: unknown) {
+      console.error("Reject payment error:", err);
+
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Could not reject payment.");
+      }
+    } finally {
       setProcessingId(null);
-      return;
     }
-
-    await loadAdminData();
-    setProcessingId(null);
   }
 
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
-        <p className="text-white/50">
-          Loading admin panel...
-        </p>
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl font-black text-black">
+            H
+          </div>
+
+          <p className="mt-5 text-sm text-white/50">
+            Loading admin panel...
+          </p>
+        </div>
       </main>
     );
   }
@@ -183,7 +224,6 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[#080808] text-white">
       <div className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-
         {/* HEADER */}
         <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -202,7 +242,8 @@ export default function AdminPage() {
 
           <button
             onClick={loadAdminData}
-            className="rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-semibold transition hover:bg-white/10"
+            disabled={loading}
+            className="rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Refresh
           </button>
@@ -234,7 +275,6 @@ export default function AdminPage() {
                   className="rounded-3xl border border-white/10 bg-white/[0.03] p-6"
                 >
                   <div className="grid gap-6 md:grid-cols-4">
-
                     {/* USER */}
                     <div>
                       <p className="text-xs uppercase tracking-wider text-white/30">
@@ -293,20 +333,46 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  {/* SCREENSHOT */}
+                  {request.screenshot_url && (
+                    <div className="mt-6 border-t border-white/10 pt-5">
+                      <p className="text-xs uppercase tracking-wider text-white/30">
+                        Payment Screenshot
+                      </p>
+
+                      <a
+                        href={request.screenshot_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white/70 transition hover:bg-white/10 hover:text-white"
+                      >
+                        View Screenshot →
+                      </a>
+                    </div>
+                  )}
+
                   {/* DATE */}
                   <div className="mt-6 border-t border-white/10 pt-5">
                     <p className="text-xs text-white/30">
                       Submitted:{" "}
                       {new Date(
                         request.created_at
-                      ).toLocaleString()}
+                      ).toLocaleString("en-IN")}
                     </p>
+
+                    {request.reviewed_at && (
+                      <p className="mt-1 text-xs text-white/25">
+                        Reviewed:{" "}
+                        {new Date(
+                          request.reviewed_at
+                        ).toLocaleString("en-IN")}
+                      </p>
+                    )}
                   </div>
 
                   {/* BUTTONS */}
                   {request.status === "pending" && (
                     <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row">
-
                       <button
                         onClick={() =>
                           approvePayment(request.id)
@@ -336,18 +402,32 @@ export default function AdminPage() {
                   {/* APPROVED INFO */}
                   {request.status === "approved" && (
                     <div className="mt-5 rounded-2xl border border-green-500/20 bg-green-500/10 p-4 text-sm text-green-300">
-                      ✓ Payment approved and subscription created.
+                      <div>
+                        ✓ Payment approved and subscription created.
+                      </div>
+
+                      {request.approved_at && (
+                        <div className="mt-1 text-xs text-green-300/60">
+                          Approved:{" "}
+                          {new Date(
+                            request.approved_at
+                          ).toLocaleString("en-IN")}
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* REJECTED INFO */}
                   {request.status === "rejected" && (
                     <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-                      ✕ Payment rejected.
+                      <div>
+                        ✕ Payment rejected.
+                      </div>
+
                       {request.admin_note && (
-                        <span className="ml-1">
+                        <div className="mt-1 text-red-300/70">
                           Reason: {request.admin_note}
-                        </span>
+                        </div>
                       )}
                     </div>
                   )}

@@ -1,143 +1,275 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
-
-type Video = {
-  id: string;
-  title: string;
-  thumbnail_url: string;
-  video_url: string;
-  duration: number;
-};
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 type Subscription = {
   id: number;
   plan_id: number;
   status: string;
-  starts_at: string;
   expires_at: string;
 };
 
-export default function PremiumPage() {
+type Plan = {
+  id: number;
+  name: string;
+  price: number;
+  duration_days: number;
+  source: string | null;
+};
+
+const TELEGRAM_CHANNEL_URL =
+  "https://t.me/+cbNYXxM7PhAxZDJl";
+
+export default function HDLinkPremiumPage() {
+  const router = useRouter();
+
   const [user, setUser] = useState<any>(null);
   const [subscription, setSubscription] =
     useState<Subscription | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
 
-  const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
-  const [videoLoading, setVideoLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [selectedVideo, setSelectedVideo] =
-    useState<Video | null>(null);
-
   useEffect(() => {
-    loadPremium();
+    initialize();
+
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, []);
 
-  async function loadPremium() {
+  async function initialize() {
     setLoading(true);
     setError("");
 
     try {
       const {
-        data: { user },
+        data: { user: currentUser },
+        error: authError,
       } = await supabase.auth.getUser();
 
-      // Login नहीं है
-      if (!user) {
-        window.location.href = "/auth/login";
+      if (authError || !currentUser) {
+        router.replace("/hdlink/auth/login");
         return;
       }
 
-      setUser(user);
+      setUser(currentUser);
 
-      // Current time
-      const now = new Date().toISOString();
+      const activeSubscription =
+        await loadSubscription(currentUser.id);
 
-      // केवल ACTIVE + अभी expire नहीं हुआ subscription
-      const {
-        data: sub,
-        error: subError,
-      } = await supabase
-        .from("subscriptions")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .gt("expires_at", now)
-        .order("expires_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
-
-      if (subError) {
-        throw new Error(subError.message);
-      }
-
-      // Active subscription नहीं है
-      if (!sub) {
-        window.location.href = "/#plans";
+      if (!activeSubscription) {
+        router.replace("/hdlink");
         return;
       }
-
-      setSubscription(sub);
-
-      // Bunny से पूरी video library
-      setVideoLoading(true);
-
-      const response = await fetch(
-        "/api/bunny-videos",
-        {
-          cache: "no-store",
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            "Videos load नहीं हुए"
-        );
-      }
-
-      // कोई slice(0, 8) नहीं
-      // API से आने वाली सारी videos
-      setVideos(data.videos || []);
-    } catch (err: any) {
+    } catch (err) {
       console.error(
-        "Premium load error:",
+        "HDLink Premium initialization error:",
         err
       );
 
       setError(
-        err?.message ||
-          "Premium page load नहीं हो पाया"
+        "Premium access could not be verified. Please refresh the page."
       );
     } finally {
-      setVideoLoading(false);
       setLoading(false);
     }
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
+  async function loadSubscription(userId: string) {
+    const now = new Date().toISOString();
 
-    // Session खत्म होने के बाद Home
-    window.location.href = "/";
+    try {
+      const {
+        data: subscriptionRows,
+        error: subscriptionError,
+      } = await supabase
+        .from("subscriptions")
+        .select(
+          "id, plan_id, status, expires_at"
+        )
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .gt("expires_at", now)
+        .order("expires_at", {
+          ascending: false,
+        });
+
+      if (subscriptionError) {
+        console.error(
+          "HDLink subscription query error:",
+          subscriptionError
+        );
+
+        setSubscription(null);
+        setPlan(null);
+
+        setError(
+          "Your HDLink subscription could not be verified."
+        );
+
+        return null;
+      }
+
+      if (
+        !subscriptionRows ||
+        subscriptionRows.length === 0
+      ) {
+        setSubscription(null);
+        setPlan(null);
+
+        return null;
+      }
+
+      const planIds = subscriptionRows
+        .map((item) => Number(item.plan_id))
+        .filter((id) => Number.isFinite(id));
+
+      if (planIds.length === 0) {
+        setSubscription(null);
+        setPlan(null);
+
+        return null;
+      }
+
+      const {
+        data: planRows,
+        error: planError,
+      } = await supabase
+        .from("plans")
+        .select(
+          "id, name, price, duration_days, source"
+        )
+        .in("id", planIds)
+        .eq("source", "hdlink")
+        .eq("is_active", true);
+
+      if (planError) {
+        console.error(
+          "HDLink plan verification error:",
+          planError
+        );
+
+        setSubscription(null);
+        setPlan(null);
+
+        setError(
+          "Your HDLink plan could not be verified."
+        );
+
+        return null;
+      }
+
+      if (!planRows || planRows.length === 0) {
+        setSubscription(null);
+        setPlan(null);
+
+        return null;
+      }
+
+      const matchingSubscription =
+        subscriptionRows.find((subscriptionItem) =>
+          planRows.some(
+            (planItem) =>
+              Number(planItem.id) ===
+              Number(subscriptionItem.plan_id)
+          )
+        );
+
+      if (!matchingSubscription) {
+        setSubscription(null);
+        setPlan(null);
+
+        return null;
+      }
+
+      const matchingPlan =
+        planRows.find(
+          (planItem) =>
+            Number(planItem.id) ===
+            Number(
+              matchingSubscription.plan_id
+            )
+        );
+
+      if (!matchingPlan) {
+        setSubscription(null);
+        setPlan(null);
+
+        return null;
+      }
+
+      const subscriptionData: Subscription = {
+        id: Number(matchingSubscription.id),
+        plan_id: Number(
+          matchingSubscription.plan_id
+        ),
+        status:
+          matchingSubscription.status,
+        expires_at:
+          matchingSubscription.expires_at,
+      };
+
+      const planData: Plan = {
+        id: Number(matchingPlan.id),
+        name:
+          matchingPlan.name ||
+          "HDLink Premium",
+        price: Number(
+          matchingPlan.price || 0
+        ),
+        duration_days: Number(
+          matchingPlan.duration_days || 0
+        ),
+        source: matchingPlan.source,
+      };
+
+      setSubscription(subscriptionData);
+      setPlan(planData);
+
+      return subscriptionData;
+    } catch (err) {
+      console.error(
+        "HDLink subscription unexpected error:",
+        err
+      );
+
+      setSubscription(null);
+      setPlan(null);
+
+      setError(
+        "Premium subscription verification failed."
+      );
+
+      return null;
+    }
   }
 
-  function openVideo(video: Video) {
-    setSelectedVideo(video);
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error(
+        "HDLink logout error:",
+        err
+      );
+    }
+
+    localStorage.removeItem(
+      "hdlink_pending_plan_id"
+    );
+
+    localStorage.removeItem(
+      "hdlink_pending_payment_id"
+    );
+
+    window.location.href = "/hdlink";
   }
 
-  function closeVideo() {
-    setSelectedVideo(null);
-  }
-
-  function formatDate(date: string) {
+  function formatExpiryDate(date: string) {
     return new Date(date).toLocaleDateString(
       "en-IN",
       {
@@ -148,74 +280,88 @@ export default function PremiumPage() {
     );
   }
 
-  function formatDuration(seconds: number) {
-    if (!seconds || seconds <= 0) {
-      return "";
+  function getRemainingDays(date: string) {
+    const expiry = new Date(date).getTime();
+    const now = Date.now();
+
+    const difference = expiry - now;
+
+    if (difference <= 0) {
+      return 0;
     }
 
-    const totalSeconds = Math.floor(seconds);
-
-    const hours = Math.floor(
-      totalSeconds / 3600
+    return Math.ceil(
+      difference /
+        (1000 * 60 * 60 * 24)
     );
-
-    const minutes = Math.floor(
-      (totalSeconds % 3600) / 60
-    );
-
-    const remainingSeconds =
-      totalSeconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${String(
-        minutes
-      ).padStart(2, "0")}:${String(
-        remainingSeconds
-      ).padStart(2, "0")}`;
-    }
-
-    return `${minutes}:${String(
-      remainingSeconds
-    ).padStart(2, "0")}`;
   }
 
-  // PAGE LOADING
+  const isPremium =
+    !!subscription &&
+    subscription.status === "active" &&
+    new Date(
+      subscription.expires_at
+    ).getTime() > Date.now();
+
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#080808] text-white">
+      <main className="flex min-h-screen items-center justify-center bg-[#050505] px-5 text-white">
         <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black">
+            H
+          </div>
 
-          <p className="mt-4 text-sm text-white/50">
-            Loading Premium...
+          <div className="mx-auto mt-6 h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+
+          <p className="mt-5 text-sm text-white/40">
+            Checking HDLink Premium access...
           </p>
         </div>
       </main>
     );
   }
 
-  // ERROR
-  if (error) {
+  if (!isPremium) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#080808] px-5 text-white">
-        <div className="w-full max-w-lg rounded-3xl border border-red-500/20 bg-red-500/10 p-8 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 text-2xl">
-            !
+      <main className="flex min-h-screen items-center justify-center bg-[#050505] px-5 text-white">
+        <div className="w-full max-w-md rounded-[32px] border border-white/10 bg-white/[0.04] p-8 text-center shadow-2xl">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-2xl font-black text-black">
+            H
           </div>
 
-          <h2 className="mt-5 text-xl font-bold text-red-300">
-            Premium page load नहीं हो पाया
-          </h2>
+          <h1 className="mt-6 text-2xl font-black">
+            Premium Access Required
+          </h1>
 
-          <p className="mt-3 text-sm leading-6 text-red-200/60">
-            {error}
+          <p className="mt-3 text-sm leading-6 text-white/40">
+            Your HDLink Premium subscription
+            is not currently active.
           </p>
 
+          {error && (
+            <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-left text-sm leading-6 text-red-300">
+              {error}
+            </div>
+          )}
+
           <button
-            onClick={loadPremium}
-            className="mt-6 rounded-full bg-white px-6 py-3 text-sm font-bold text-black transition hover:bg-white/85"
+            onClick={() =>
+              router.push("/hdlink")
+            }
+            className="mt-7 w-full rounded-full bg-white px-6 py-4 text-sm font-black text-black transition hover:bg-white/85"
           >
-            Try Again
+            Get HDLink Premium →
+          </button>
+
+          <button
+            onClick={() =>
+              router.push(
+                "/hdlink/auth/login"
+              )
+            }
+            className="mt-3 w-full rounded-full border border-white/10 px-6 py-4 text-sm font-bold text-white/70 transition hover:bg-white/5 hover:text-white"
+          >
+            Login
           </button>
         </div>
       </main>
@@ -223,544 +369,364 @@ export default function PremiumPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#080808] text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#050505] text-white">
+      {/* Background */}
 
-      {/* ================= NAVBAR ================= */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-1/2 top-[-300px] h-[700px] w-[900px] -translate-x-1/2 rounded-full bg-purple-500/[0.08] blur-[160px]" />
 
-      <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#080808]/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
+        <div className="absolute right-[-200px] top-[500px] h-[500px] w-[500px] rounded-full bg-blue-500/[0.05] blur-[140px]" />
 
+        <div className="absolute bottom-[-250px] left-[-200px] h-[500px] w-[500px] rounded-full bg-pink-500/[0.04] blur-[140px]" />
+      </div>
+
+      {/* Navbar */}
+
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#050505]/75 backdrop-blur-2xl">
+        <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5 lg:px-8">
           <button
-            onClick={() => {
-              window.location.href = "/";
-            }}
-            className="text-left"
+            onClick={() =>
+              router.push("/hdlink")
+            }
+            className="flex items-center gap-3"
           >
-            <div className="text-lg font-black tracking-tight">
-              VideoStream
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg font-black text-black">
+              H
             </div>
 
-            <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/35">
-              Premium
+            <div className="text-left">
+              <div className="text-lg font-black">
+                HDLink
+              </div>
+
+              <div className="text-[9px] font-semibold uppercase tracking-[0.3em] text-white/30">
+                Premium
+              </div>
             </div>
           </button>
 
           <div className="flex items-center gap-3">
-
-            <div className="hidden rounded-full border border-green-400/20 bg-green-400/10 px-4 py-2 text-xs font-semibold text-green-300 sm:block">
+            <div className="hidden rounded-full border border-green-400/20 bg-green-400/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-green-300 sm:block">
               ✓ Premium Active
             </div>
 
-            <span className="hidden max-w-[240px] truncate text-sm text-white/40 md:block">
-              {user?.email}
-            </span>
-
             <button
-              onClick={logout}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-semibold transition hover:bg-white/10"
+              onClick={handleLogout}
+              className="rounded-full border border-white/10 px-4 py-2.5 text-xs font-semibold text-white/60 transition hover:bg-white/5 hover:text-white"
             >
               Logout
             </button>
-
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* ================= HERO ================= */}
+      {/* Main */}
 
-      <section className="relative overflow-hidden border-b border-white/10">
+      <section className="relative z-10 px-5 pb-20 pt-16 sm:pt-24">
+        <div className="mx-auto max-w-5xl">
+          {/* Hero */}
 
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.14),transparent_45%)]" />
-
-        <div className="absolute -left-40 top-20 h-80 w-80 rounded-full bg-white/[0.03] blur-3xl" />
-
-        <div className="relative mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-28">
-
-          <div className="max-w-4xl">
-
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-green-300">
-
-              <span className="h-2 w-2 rounded-full bg-green-400" />
-
-              Premium Active
-
+          <div className="text-center">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-white text-3xl font-black text-black shadow-2xl">
+              H
             </div>
 
-            <h1 className="text-5xl font-black leading-[0.95] tracking-[-0.04em] sm:text-7xl lg:text-8xl">
+            <div className="mx-auto mt-7 inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/[0.06] px-5 py-2.5 text-xs font-bold text-green-300">
+              <span className="h-2 w-2 rounded-full bg-green-400" />
+              Premium Access Active
+            </div>
+
+            <h1 className="mt-7 text-4xl font-black tracking-[-0.04em] sm:text-6xl">
               Welcome to
               <br />
-
-              <span className="text-white/30">
-                Premium.
+              <span className="text-white/40">
+                HDLink Premium.
               </span>
             </h1>
 
-            <p className="mt-7 max-w-2xl text-base leading-7 text-white/45 sm:text-lg">
-              Your premium membership is active.
-              Enjoy the complete video library
-              with a smooth streaming experience.
+            <p className="mx-auto mt-6 max-w-2xl text-sm leading-7 text-white/45 sm:text-base">
+              Your HDLink Premium access is
+              active. Join the official HDLink
+              Telegram community to receive
+              updates and announcements.
             </p>
+          </div>
 
-            <div className="mt-8 flex flex-wrap gap-3">
+          {/* Subscription Information */}
 
-              <a
-                href="#videos"
-                className="rounded-full bg-white px-7 py-3.5 text-sm font-bold text-black transition hover:bg-white/85"
-              >
-                Watch Videos
-              </a>
+          <div className="mx-auto mt-12 grid max-w-3xl gap-4 sm:grid-cols-3">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
+                Access Status
+              </div>
+
+              <div className="mt-3 text-lg font-black text-green-300">
+                Active
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
+                Plan
+              </div>
+
+              <div className="mt-3 text-lg font-black">
+                {plan?.name ||
+                  "HDLink Premium"}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">
+                Expires
+              </div>
+
+              <div className="mt-3 text-lg font-black">
+                {subscription
+                  ? formatExpiryDate(
+                      subscription.expires_at
+                    )
+                  : "-"}
+              </div>
+            </div>
+          </div>
+
+          {/* Telegram */}
+
+          <div className="mx-auto mt-10 max-w-3xl">
+            <div className="overflow-hidden rounded-[32px] border border-sky-400/20 bg-gradient-to-br from-sky-500/[0.14] via-white/[0.04] to-transparent p-7 shadow-2xl sm:p-10">
+              <div className="text-center">
+                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#229ED9] text-3xl shadow-xl">
+                  ✈️
+                </div>
+
+                <div className="mt-7 text-[10px] font-bold uppercase tracking-[0.25em] text-sky-300/70">
+                  Premium Community
+                </div>
+
+                <h2 className="mt-2 text-2xl font-black sm:text-3xl">
+                  Join HDLink Telegram
+                </h2>
+
+                <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-white/40">
+                  Join our official Telegram
+                  community to receive HDLink
+                  updates, announcements and
+                  important information about
+                  your Premium access.
+                </p>
+
+                <a
+                  href={TELEGRAM_CHANNEL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-full bg-[#229ED9] px-8 py-4 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#168dcc] hover:shadow-2xl active:scale-[0.98] sm:w-auto"
+                >
+                  ✈️ Join Telegram
+                  <span className="text-lg">
+                    →
+                  </span>
+                </a>
+
+                <p className="mt-4 text-[11px] text-white/25">
+                  Official HDLink Telegram
+                  community
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Rules */}
+
+          <div className="mx-auto mt-8 max-w-3xl">
+            <div className="rounded-[30px] border border-white/10 bg-white/[0.03] p-7 sm:p-9">
+              <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/30">
+                Telegram Rules
+              </div>
+
+              <h2 className="mt-3 text-2xl font-black">
+                How Telegram access works
+              </h2>
+
+              <div className="mt-7 space-y-4">
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-black">
+                    1
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold">
+                      Active Premium required
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-white/40">
+                      You can use HDLink Premium
+                      while your subscription is
+                      active.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-black">
+                    2
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold">
+                      Join using the official button
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-white/40">
+                      Use the Join Telegram button
+                      above to enter the official
+                      HDLink community.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-black">
+                    3
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold">
+                      One Premium account
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-white/40">
+                      Your Premium access is linked
+                      to your HDLink account.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-black">
+                    4
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold">
+                      Expiry
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-white/40">
+                      When your Premium subscription
+                      expires, your HDLink Premium
+                      access will become inactive.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-black">
+                    5
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold">
+                      Telegram membership
+                    </h3>
+
+                    <p className="mt-1 text-sm leading-6 text-white/40">
+                      Telegram removal after expiry
+                      is handled by the HDLink
+                      Telegram automation/bot system.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Expiry Card */}
+
+          {subscription && (
+            <div className="mx-auto mt-8 max-w-3xl rounded-[30px] border border-purple-400/20 bg-purple-500/[0.06] p-7 sm:p-9">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-purple-300/60">
+                    Premium Valid Until
+                  </div>
+
+                  <div className="mt-2 text-2xl font-black">
+                    {formatExpiryDate(
+                      subscription.expires_at
+                    )}
+                  </div>
+
+                  <p className="mt-2 text-sm text-white/40">
+                    Your current Premium access
+                    has approximately{" "}
+                    <span className="font-bold text-white/70">
+                      {getRemainingDays(
+                        subscription.expires_at
+                      )}{" "}
+                      days
+                    </span>{" "}
+                    remaining.
+                  </p>
+                </div>
+
+                <div className="w-fit rounded-full border border-green-400/20 bg-green-400/10 px-5 py-3 text-xs font-black text-green-300">
+                  ✓ ACTIVE
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Account */}
+
+          <div className="mx-auto mt-8 max-w-3xl rounded-[30px] border border-white/10 bg-white/[0.03] p-7 sm:p-9">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/30">
+                  Account
+                </div>
+
+                <h2 className="mt-2 text-xl font-black">
+                  HDLink Premium Account
+                </h2>
+
+                {user?.email && (
+                  <p className="mt-2 text-sm text-white/35">
+                    {user.email}
+                  </p>
+                )}
+              </div>
 
               <button
-                onClick={logout}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-7 py-3.5 text-sm font-semibold transition hover:bg-white/10"
+                onClick={handleLogout}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-6 py-3.5 text-sm font-bold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
               >
                 Logout
               </button>
-
             </div>
-
           </div>
         </div>
       </section>
 
-      {/* ================= SUBSCRIPTION ================= */}
+      {/* Footer */}
 
-      {subscription && (
-        <section className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-
-          <div className="grid gap-4 md:grid-cols-3">
-
-            {/* STATUS */}
-
-            <div className="rounded-3xl border border-green-400/10 bg-green-400/[0.04] p-6">
-
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/35">
-                Membership
-              </p>
-
-              <div className="mt-4 flex items-center gap-3">
-
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-400/10">
-                  ✓
-                </div>
-
-                <div>
-                  <p className="font-bold text-green-400">
-                    Active
-                  </p>
-
-                  <p className="text-xs text-white/35">
-                    Premium access enabled
-                  </p>
-                </div>
-
-              </div>
-            </div>
-
-            {/* STARTED */}
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/35">
-                Started
-              </p>
-
-              <p className="mt-4 text-xl font-bold">
-                {formatDate(
-                  subscription.starts_at
-                )}
-              </p>
-
-            </div>
-
-            {/* EXPIRES */}
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/35">
-                Expires
-              </p>
-
-              <p className="mt-4 text-xl font-bold">
-                {formatDate(
-                  subscription.expires_at
-                )}
-              </p>
-
-            </div>
-
-          </div>
-        </section>
-      )}
-
-      {/* ================= BENEFITS ================= */}
-
-      <section className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-
-        <div className="mb-7">
-
-          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/30">
-            Membership
-          </p>
-
-          <h2 className="mt-2 text-3xl font-black tracking-tight">
-            Your Premium Benefits
-          </h2>
-
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-
-          {[
-            {
-              icon: "▶",
-              title: "Premium Videos",
-              text: "Access your complete premium video library.",
-            },
-            {
-              icon: "⚡",
-              title: "Fast Streaming",
-              text: "Enjoy a smooth and responsive streaming experience.",
-            },
-            {
-              icon: "🔒",
-              title: "Secure Access",
-              text: "Your premium access is connected to your account.",
-            },
-            {
-              icon: "✦",
-              title: "Exclusive Content",
-              text: "Premium members can watch exclusive content.",
-            },
-          ].map((item) => (
-
-            <div
-              key={item.title}
-              className="group rounded-3xl border border-white/10 bg-white/[0.03] p-6 transition hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05]"
-            >
-
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg text-black">
-                {item.icon}
-              </div>
-
-              <h3 className="mt-5 font-bold">
-                {item.title}
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-white/35">
-                {item.text}
-              </p>
-
-            </div>
-
-          ))}
-
-        </div>
-      </section>
-
-      {/* ================= VIDEO LIBRARY ================= */}
-
-      <section
-        id="videos"
-        className="mx-auto max-w-7xl px-5 py-16 lg:px-8"
-      >
-
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-
+      <footer className="relative z-10 border-t border-white/10 px-5 py-10">
+        <div className="mx-auto flex max-w-5xl flex-col justify-between gap-3 text-center sm:flex-row sm:text-left">
           <div>
-
-            <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/30">
-              Premium Library
-            </p>
-
-            <h2 className="mt-2 text-4xl font-black tracking-tight">
-              All Premium Videos
-            </h2>
-
-            <p className="mt-3 text-sm text-white/35">
-              {videos.length} videos available for you
-            </p>
-
-          </div>
-
-          <button
-            onClick={loadPremium}
-            className="w-fit rounded-full border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-semibold transition hover:bg-white/10"
-          >
-            ↻ Refresh
-          </button>
-
-        </div>
-
-        {/* VIDEO LOADING */}
-
-        {videoLoading ? (
-
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-
-            {Array.from({
-              length: 8,
-            }).map((_, index) => (
-
-              <div
-                key={index}
-                className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]"
-              >
-
-                <div className="aspect-video animate-pulse bg-white/[0.06]" />
-
-                <div className="p-5">
-
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-white/[0.06]" />
-
-                  <div className="mt-3 h-3 w-1/2 animate-pulse rounded bg-white/[0.04]" />
-
-                  <div className="mt-5 h-10 w-full animate-pulse rounded-full bg-white/[0.05]" />
-
-                </div>
-
-              </div>
-
-            ))}
-
-          </div>
-
-        ) : videos.length === 0 ? (
-
-          <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.03] p-14 text-center">
-
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.05] text-2xl">
-              🎬
+            <div className="font-bold">
+              HDLink
             </div>
 
-            <h3 className="mt-5 text-lg font-bold">
-              No videos available
-            </h3>
-
-            <p className="mt-2 text-sm text-white/35">
-              Premium videos are currently unavailable.
-            </p>
-
-          </div>
-
-        ) : (
-
-          /*
-           * IMPORTANT:
-           * यहाँ videos.map है।
-           * कोई slice(0, 8) नहीं है।
-           * इसलिए API से जितनी videos आएंगी,
-           * सभी यहाँ दिखाई देंगी।
-           */
-
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-
-            {videos.map((video) => (
-
-              <article
-                key={video.id}
-                className="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05]"
-              >
-
-                {/* THUMBNAIL */}
-
-                <button
-                  onClick={() =>
-                    openVideo(video)
-                  }
-                  className="relative block aspect-video w-full overflow-hidden bg-black text-left"
-                >
-
-                  <img
-                    src={video.thumbnail_url}
-                    alt={video.title}
-                    className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-                    loading="lazy"
-                    onError={(e) => {
-                      e.currentTarget.style.display =
-                        "none";
-                    }}
-                  />
-
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/20" />
-
-                  <div className="absolute left-3 top-3 rounded-full border border-white/10 bg-black/70 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] backdrop-blur-md">
-                    Premium
-                  </div>
-
-                  {video.duration > 0 && (
-                    <div className="absolute bottom-3 right-3 rounded-md bg-black/80 px-2 py-1 text-[10px] font-semibold">
-                      {formatDuration(
-                        video.duration
-                      )}
-                    </div>
-                  )}
-
-                  <div className="absolute inset-0 flex items-center justify-center">
-
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-lg text-black shadow-2xl transition duration-300 group-hover:scale-110">
-                      ▶
-                    </div>
-
-                  </div>
-
-                </button>
-
-                {/* DETAILS */}
-
-                <div className="p-5">
-
-                  <h3 className="line-clamp-2 min-h-[48px] font-bold leading-6">
-                    {video.title}
-                  </h3>
-
-                  <p className="mt-2 text-xs text-white/30">
-                    Premium content
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      openVideo(video)
-                    }
-                    className="mt-5 w-full rounded-full bg-white py-3 text-sm font-bold text-black transition hover:bg-white/85 active:scale-[0.98]"
-                  >
-                    Watch Now
-                  </button>
-
-                </div>
-
-              </article>
-
-            ))}
-
-          </div>
-
-        )}
-
-      </section>
-
-      {/* ================= VIDEO PLAYER ================= */}
-
-      {selectedVideo && (
-
-        <div
-          className="fixed inset-0 z-[999] flex items-center justify-center bg-black/95 p-4 backdrop-blur-sm"
-          onClick={closeVideo}
-        >
-
-          <div
-            className="relative w-full max-w-6xl"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-
-            {/* CLOSE */}
-
-            <button
-              onClick={closeVideo}
-              aria-label="Close video"
-              className="absolute -right-1 -top-14 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg font-black text-black shadow-2xl transition hover:scale-105"
-            >
-              ✕
-            </button>
-
-            {/* PLAYER */}
-
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-
-              <div className="aspect-video w-full">
-
-                <iframe
-                  src={`${selectedVideo.video_url}${
-                    selectedVideo.video_url.includes(
-                      "?"
-                    )
-                      ? "&"
-                      : "?"
-                  }autoplay=true&preload=true&responsive=true`}
-                  className="h-full w-full"
-                  loading="lazy"
-                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-                  allowFullScreen
-                  style={{
-                    border: "none",
-                  }}
-                  title={
-                    selectedVideo.title
-                  }
-                />
-
-              </div>
-
+            <div className="mt-1 text-xs text-white/25">
+              Premium access
             </div>
-
-            {/* PLAYER INFO */}
-
-            <div className="mt-5">
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
-                <div>
-
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/30">
-                    Now Playing
-                  </p>
-
-                  <h3 className="mt-1 text-xl font-bold">
-                    {selectedVideo.title}
-                  </h3>
-
-                </div>
-
-                <div className="rounded-full border border-green-400/20 bg-green-400/10 px-4 py-2 text-xs font-bold text-green-300">
-                  ✓ Premium
-                </div>
-
-              </div>
-
-            </div>
-
           </div>
 
+          <div className="text-xs text-white/25">
+            Secure account • Premium access
+          </div>
         </div>
-
-      )}
-
-      {/* ================= FOOTER ================= */}
-
-      <footer className="border-t border-white/10">
-
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-sm text-white/30 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-
-          <div>
-            © 2026 VideoStream
-          </div>
-
-          <div className="flex items-center gap-5">
-
-            <button
-              onClick={() => {
-                window.location.href = "/";
-              }}
-              className="transition hover:text-white"
-            >
-              Home
-            </button>
-
-            <button
-              onClick={logout}
-              className="transition hover:text-white"
-            >
-              Logout
-            </button>
-
-          </div>
-
-        </div>
-
       </footer>
-
     </main>
   );
 }
