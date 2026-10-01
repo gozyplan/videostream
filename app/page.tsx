@@ -36,7 +36,7 @@ const TELEGRAM_URL =
   "https://t.me/+IVAeTBOoSMdhZTQ1";
 
 const WHATSAPP_URL =
-  "https://whatsapp.com/channel/0029VavGkVeCsU9MFBcyX91V";
+  "https://t.me/+IVAeTBOoSMdhZTQ1";
 
 const PLAN_CONFIG = [
   {
