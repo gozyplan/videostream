@@ -604,59 +604,20 @@ async function loadPlans() {
   // FIND PLAN
   // =========================================================
 
-  function findPlan(
-    key: string
-  ) {
-    if (
-      key === "day"
-    ) {
-      return (
-        plans.find(
-          (p) =>
-            Number(
-              p.price
-            ) === 210 &&
-            Number(
-              p.duration_days
-            ) === 1
-        ) ||
-        null
-      );
+  function findPlan(key: string): Plan | null {
+    const planIdByKey: Record<string, number> = {
+      day: 7,
+      "three-months": 8,
+      lifetime: 9,
+    };
+
+    const planId = planIdByKey[key];
+
+    if (planId === undefined) {
+      return null;
     }
 
-    if (
-      key ===
-      "three-months"
-    ) {
-      return (
-        plans.find(
-          (p) =>
-            Number(
-              p.price
-            ) === 550 &&
-            Number(
-              p.duration_days
-            ) === 90
-        ) ||
-        null
-      );
-    }
-
-    if (
-      key === "lifetime"
-    ) {
-      return (
-        plans.find(
-          (p) =>
-            Number(
-              p.price
-            ) === 850
-        ) ||
-        null
-      );
-    }
-
-    return null;
+    return plans.find((plan) => Number(plan.id) === planId) ?? null;
   }
 
   // =========================================================
