@@ -465,130 +465,48 @@ async function initializeFast() {
   // LOAD HDLINK PLANS
   // =========================================================
 
+  
   async function loadPlans() {
-    const {
-      data,
-      error: planError,
-    } = await supabase
+    const { data, error: planError } = await supabase
       .from("plans")
-      .select(
-        "id,name,price,duration_days,description,is_active,source"
-      )
-      .eq(
-        "is_active",
-        true
-      )
-      .eq(
-        "source",
-        "hdlink"
-      )
-      .order(
-        "price",
-        {
-          ascending: true,
-        }
-      );
+      .select("id,name,price,duration_days,description,is_active,source")
+      .eq("is_active", true)
+      .eq("source", "hdlink")
+      .in("id", [7, 8, 9])
+      .order("price", { ascending: true });
 
     if (planError) {
-      console.error(
-        "HDLink plans error:",
-        planError
-      );
-
+      console.error("HDLink plans error:", planError);
       setPlans([]);
       return;
     }
 
-    const databasePlans =
-      (data || []) as Plan[];
+    const databasePlans = (data || []) as Plan[];
+
+    const planSettings = [
+      { id: 7, key: "day", title: "Quick Access", price: 260 },
+      { id: 8, key: "three-months", title: "Most Popular", price: 560 },
+      { id: 9, key: "lifetime", title: "VIP Lifetime", price: 860 },
+    ];
 
     const matched: Plan[] = [];
 
-    for (const config of PLAN_CONFIG) {
-      let plan:
-        | Plan
-        | undefined;
-
-      if (config.key === "day") {
-        plan =
-          databasePlans.find(
-            (item) =>
-              Number(
-                item.price
-              ) === 210 &&
-              Number(
-                item.duration_days
-              ) === 1
-          );
-      }
-
-      if (
-        config.key ===
-        "three-months"
-      ) {
-        plan =
-          databasePlans.find(
-            (item) =>
-              Number(
-                item.price
-              ) === 550 &&
-              Number(
-                item.duration_days
-              ) === 90
-          );
-      }
-
-      if (
-        config.key ===
-        "lifetime"
-      ) {
-        plan =
-          databasePlans.find(
-            (item) => {
-              const name =
-                String(
-                  item.name ||
-                    ""
-                ).toLowerCase();
-
-              const duration =
-                Number(
-                  item.duration_days
-                );
-
-              return (
-                Number(
-                  item.price
-                ) === 850 &&
-                (
-                  name.includes(
-                    "life"
-                  ) ||
-                  name.includes(
-                    "lifetime"
-                  ) ||
-                  duration >=
-                    3650
-                )
-              );
-            }
-          );
-      }
+    for (const config of planSettings) {
+      const plan = databasePlans.find(
+        (item) => Number(item.id) === config.id
+      );
 
       if (plan) {
         matched.push({
           ...plan,
-          name:
-            config.title,
-          price:
-            config.price,
+          name: config.title,
+          price: config.price,
         });
       }
     }
 
     setPlans(matched);
   }
-
   // =========================================================
   // LOAD VIDEOS
   // =========================================================
