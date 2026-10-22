@@ -41,23 +41,23 @@ const WHATSAPP_URL =
 const PLAN_CONFIG = [
   {
     key: "day",
-    price: 210,
-    duration: 1,
-    title: "1 Day",
+    price: 260,
+    duration: 30,
+    title: "30 Days",
     subtitle: "Quick Access",
     badge: "QUICK ACCESS",
   },
   {
     key: "three-months",
-    price: 550,
+    price: 560,
     duration: 90,
-    title: "3 Months",
-    subtitle: "90 Days Premium",
+    title: "90 Days",
+    subtitle: "Most Popular",
     badge: "MOST POPULAR",
   },
   {
     key: "lifetime",
-    price: 850,
+    price: 860,
     duration: null,
     title: "Lifetime Access",
     subtitle: "Unlimited Access",
@@ -466,47 +466,67 @@ async function initializeFast() {
   // =========================================================
 
   
-  async function loadPlans() {
-    const { data, error: planError } = await supabase
-      .from("plans")
-      .select("id,name,price,duration_days,description,is_active,source")
-      .eq("is_active", true)
-      .eq("source", "hdlink")
-      .in("id", [7, 8, 9])
-      .order("price", { ascending: true });
+  
+async function loadPlans() {
+  const { data, error: planError } = await supabase
+    .from("plans")
+    .select(
+      "id,name,price,duration_days,description,is_active,source"
+    )
+    .eq("is_active", true)
+    .eq("source", "hdlink")
+    .in("id", [7, 8, 9])
+    .order("price", { ascending: true });
 
-    if (planError) {
-      console.error("HDLink plans error:", planError);
-      setPlans([]);
-      return;
-    }
-
-    const databasePlans = (data || []) as Plan[];
-
-    const planSettings = [
-      { id: 7, key: "day", title: "Quick Access", price: 260 },
-      { id: 8, key: "three-months", title: "Most Popular", price: 560 },
-      { id: 9, key: "lifetime", title: "VIP Lifetime", price: 860 },
-    ];
-
-    const matched: Plan[] = [];
-
-    for (const config of planSettings) {
-      const plan = databasePlans.find(
-        (item) => Number(item.id) === config.id
-      );
-
-      if (plan) {
-        matched.push({
-          ...plan,
-          name: config.title,
-          price: config.price,
-        });
-      }
-    }
-
-    setPlans(matched);
+  if (planError) {
+    console.error("HDLink plans error:", planError);
+    setPlans([]);
+    return;
   }
+
+  const databasePlans = (data || []) as Plan[];
+
+  const planSettings = [
+    {
+      id: 7,
+      title: "Quick Access",
+      price: 260,
+      duration_days: 30,
+    },
+    {
+      id: 8,
+      title: "Most Popular",
+      price: 560,
+      duration_days: 90,
+    },
+    {
+      id: 9,
+      title: "VIP Lifetime",
+      price: 860,
+      duration_days: 36500,
+    },
+  ];
+
+  const matched: Plan[] = [];
+
+  for (const config of planSettings) {
+    const plan = databasePlans.find(
+      (item) => Number(item.id) === config.id
+    );
+
+    if (plan) {
+      matched.push({
+        ...plan,
+        name: config.title,
+        price: config.price,
+        duration_days: config.duration_days,
+      });
+    }
+  }
+
+  setPlans(matched);
+}
+
   // =========================================================
   // LOAD VIDEOS
   // =========================================================
