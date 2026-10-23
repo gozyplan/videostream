@@ -41,15 +41,15 @@ const WHATSAPP_URL =
 const PLAN_CONFIG = [
   {
     key: "day",
-    price: 260,
-    duration: 30,
-    title: "30 Days",
+    price: 90,
+    duration: 1,
+    title: "1 Day",
     subtitle: "Quick Access",
     badge: "QUICK ACCESS",
   },
   {
     key: "three-months",
-    price: 560,
+    price: 360,
     duration: 90,
     title: "90 Days",
     subtitle: "Most Popular",
@@ -57,11 +57,40 @@ const PLAN_CONFIG = [
   },
   {
     key: "lifetime",
-    price: 860,
+    price: 560,
     duration: null,
     title: "Lifetime Access",
-    subtitle: "Unlimited Access",
+    subtitle: "VIP Unlimited Access",
     badge: "VIP • LIFETIME",
+  },
+] as const;
+
+const INTERNATIONAL_UPI_ID = "gozyplan@naviaxis";
+
+const INTERNATIONAL_PLANS = [
+  {
+    key: "international-day",
+    title: "1 Day",
+    price: 20,
+    subtitle: "Quick Access",
+    badge: "QUICK ACCESS",
+    icon: "⚡",
+  },
+  {
+    key: "international-90-days",
+    title: "90 Days",
+    price: 50,
+    subtitle: "Best for regular access",
+    badge: "MOST POPULAR",
+    icon: "⭐",
+  },
+  {
+    key: "international-lifetime",
+    title: "Lifetime",
+    price: 90,
+    subtitle: "One-time lifetime plan",
+    badge: "VIP • LIFETIME",
+    icon: "👑",
   },
 ] as const;
 
@@ -108,6 +137,11 @@ function HDLinkPage() {
 
   const [checkingSubscription, setCheckingSubscription] =
     useState(true);
+
+  const [showInternationalPlans, setShowInternationalPlans] =
+    useState(false);
+
+  const [upiCopied, setUpiCopied] = useState(false);
 
   useEffect(() => {
     initializeFast();
@@ -490,19 +524,19 @@ async function loadPlans() {
     {
       id: 7,
       title: "Quick Access",
-      price: 260,
-      duration_days: 30,
+      price: 90,
+      duration_days: 1,
     },
     {
       id: 8,
       title: "Most Popular",
-      price: 560,
+      price: 360,
       duration_days: 90,
     },
     {
       id: 9,
       title: "VIP Lifetime",
-      price: 860,
+      price: 560,
       duration_days: 36500,
     },
   ];
@@ -1470,6 +1504,120 @@ async function loadPlans() {
               }
             )}
 
+          </div>
+
+          {/* INTERNATIONAL PLANS — separate from the existing India UPI flow */}
+          <div className="mt-10 overflow-hidden rounded-[32px] border border-sky-300/20 bg-gradient-to-br from-sky-500/[0.09] via-white/[0.025] to-violet-500/[0.08] p-5 sm:p-8">
+            <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-sky-200">
+                  🌍 International Access
+                </div>
+                <h3 className="mt-4 text-2xl font-black sm:text-3xl">
+                  Outside India?
+                </h3>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-white/45">
+                  View the international plans in US dollars. The payment details below show the UPI ID you provided.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowInternationalPlans((current) => !current)}
+                aria-expanded={showInternationalPlans}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-sky-200/25 bg-sky-300/10 px-6 py-3.5 text-sm font-black text-sky-100 transition hover:-translate-y-0.5 hover:bg-sky-300/15 sm:w-auto"
+              >
+                {showInternationalPlans ? "Hide International Plans" : "Other Country Plans"}
+                <span aria-hidden="true">{showInternationalPlans ? "↑" : "→"}</span>
+              </button>
+            </div>
+
+            {showInternationalPlans && (
+              <div className="mt-8">
+                <div className="grid gap-4 md:grid-cols-3">
+                  {INTERNATIONAL_PLANS.map((internationalPlan) => {
+                    const popular = internationalPlan.key === "international-90-days";
+                    const lifetime = internationalPlan.key === "international-lifetime";
+
+                    return (
+                      <div
+                        key={internationalPlan.key}
+                        className={`relative overflow-hidden rounded-[26px] border p-5 transition duration-300 hover:-translate-y-1 ${
+                          popular
+                            ? "border-violet-300/40 bg-gradient-to-b from-violet-500/20 to-black/20 shadow-xl shadow-violet-950/20"
+                            : lifetime
+                            ? "border-amber-300/30 bg-gradient-to-b from-amber-400/10 to-black/20"
+                            : "border-white/10 bg-black/20"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-2xl" aria-hidden="true">{internationalPlan.icon}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-[9px] font-black tracking-wider ${
+                            popular
+                              ? "bg-violet-300 text-black"
+                              : lifetime
+                              ? "bg-amber-200 text-black"
+                              : "bg-white/10 text-white/65"
+                          }`}>
+                            {internationalPlan.badge}
+                          </span>
+                        </div>
+
+                        <h4 className="mt-5 text-xl font-black">{internationalPlan.title}</h4>
+                        <div className="mt-3 flex items-end gap-2">
+                          <span className="text-4xl font-black tracking-tight">${internationalPlan.price}</span>
+                          <span className="pb-1 text-xs text-white/35">USD</span>
+                        </div>
+                        <p className="mt-2 min-h-10 text-sm leading-5 text-white/45">
+                          {internationalPlan.subtitle}
+                        </p>
+                        <div className="mt-5 h-px bg-white/10" />
+                        <div className="mt-4 space-y-2.5 text-xs text-white/60">
+                          <div className="flex items-center gap-2"><span className="text-emerald-300">✓</span> HDLink premium access</div>
+                          <div className="flex items-center gap-2"><span className="text-emerald-300">✓</span> Account-based access</div>
+                          <div className="flex items-center gap-2"><span className="text-emerald-300">✓</span> Manual payment verification</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 rounded-[26px] border border-sky-200/20 bg-black/30 p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-200/70">
+                        UPI Payment ID
+                      </div>
+                      <div className="mt-2 break-all text-xl font-black tracking-wide text-white sm:text-2xl">
+                        {INTERNATIONAL_UPI_ID}
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-white/40">
+                        Copy this ID to use it in a UPI app that supports your payment. USD prices are displayed for reference; confirm the amount and currency your payment app can send before paying.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(INTERNATIONAL_UPI_ID);
+                          setUpiCopied(true);
+                          window.setTimeout(() => setUpiCopied(false), 2200);
+                        } catch {
+                          setError("Could not copy automatically. Please select and copy the UPI ID manually.");
+                        }
+                      }}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-6 py-3.5 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-sky-100"
+                    >
+                      {upiCopied ? "✓ UPI ID Copied" : "Copy UPI ID"}
+                    </button>
+                  </div>
+                  <div className="mt-4 rounded-2xl border border-amber-200/10 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/65">
+                    Important: UPI availability varies by country, bank, and payment app. Showing this ID does not guarantee that an international transfer will work. Confirm support before sending money.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.025] p-5 text-center text-xs text-white/35">
