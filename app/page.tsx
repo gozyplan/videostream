@@ -142,6 +142,11 @@ function HDLinkPage() {
     useState(false);
 
   const [upiCopied, setUpiCopied] = useState(false);
+  const [selectedInternationalKey, setSelectedInternationalKey] =
+    useState<string | null>(null);
+  const [internationalUtr, setInternationalUtr] = useState("");
+  const [internationalSubmitting, setInternationalSubmitting] = useState(false);
+  const [internationalError, setInternationalError] = useState("");
 
   useEffect(() => {
     initializeFast();
@@ -859,6 +864,119 @@ async function loadPlans() {
   }
 
   // =========================================================
+  // SUBMIT INTERNATIONAL PAYMENT
+  // Uses the existing payment_requests table and approval polling.
+  // International plans map to the same access durations as plans 7/8/9.
+  // =========================================================
+
+  async function submitInternationalPayment(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    setInternationalError("");
+    setError("");
+    setMessage("");
+
+    if (!selectedInternationalKey) {
+      setInternationalError("Please select an international plan first.");
+      return;
+    }
+
+    const internationalPlan = INTERNATIONAL_PLANS.find(
+      (item) => item.key === selectedInternationalKey
+    );
+
+    const matchingPlanId =
+      selectedInternationalKey === "international-day"
+        ? 7
+        : selectedInternationalKey === "international-90-days"
+        ? 8
+        : 9;
+
+    const matchingPlan = plans.find(
+      (item) => Number(item.id) === matchingPlanId
+    );
+
+    if (!internationalPlan || !matchingPlan) {
+      setInternationalError(
+        "This plan is not configured in the database yet. Please contact support."
+      );
+      return;
+    }
+
+    if (!user) {
+      router.push(
+        `/auth/register?plan=${encodeURIComponent(String(matchingPlan.id))}`
+      );
+      return;
+    }
+
+    const transactionId = internationalUtr.trim();
+    if (transactionId.length < 6) {
+      setInternationalError("Please enter a valid UTR / Transaction ID (at least 6 characters).");
+      return;
+    }
+
+    setInternationalSubmitting(true);
+
+    try {
+      const { data: duplicate, error: duplicateError } = await supabase
+        .from("payment_requests")
+        .select("id,status")
+        .eq("utr", transactionId)
+        .maybeSingle();
+
+      if (duplicateError) throw duplicateError;
+
+      if (duplicate) {
+        setInternationalError(
+          "This UTR / Transaction ID has already been submitted."
+        );
+        return;
+      }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("payment_requests")
+        .insert({
+          user_id: user.id,
+          plan_id: matchingPlan.id,
+          utr: transactionId,
+          status: "pending",
+          source: "hdlink",
+        })
+        .select("id,user_id,plan_id,status")
+        .single();
+
+      if (insertError) throw insertError;
+
+      if (inserted) {
+        setSelectedPlan(matchingPlan);
+        setPendingPaymentId(inserted.id);
+        localStorage.setItem(
+          "hdlink_pending_payment_id",
+          String(inserted.id)
+        );
+        localStorage.setItem(
+          "hdlink_pending_plan_id",
+          String(matchingPlan.id)
+        );
+        setPaymentSubmitted(true);
+        setMessage(
+          `International ${internationalPlan.title} plan submitted for manual verification.`
+        );
+        setInternationalUtr("");
+      }
+    } catch (err: any) {
+      console.error("International payment submit error:", err);
+      setInternationalError(
+        err?.message || "International payment could not be submitted."
+      );
+    } finally {
+      setInternationalSubmitting(false);
+    }
+  }
+
+  // =========================================================
   // CLOSE PAYMENT
   // =========================================================
 
@@ -1540,10 +1658,18 @@ async function loadPlans() {
                     const lifetime = internationalPlan.key === "international-lifetime";
 
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={internationalPlan.key}
-                        className={`relative overflow-hidden rounded-[26px] border p-5 transition duration-300 hover:-translate-y-1 ${
-                          popular
+                        onClick={() => {
+                          setSelectedInternationalKey(internationalPlan.key);
+                          setInternationalError("");
+                        }}
+                        aria-pressed={selectedInternationalKey === internationalPlan.key}
+                        className={`relative w-full overflow-hidden rounded-[26px] border p-5 text-left transition duration-300 hover:-translate-y-1 ${
+                          selectedInternationalKey === internationalPlan.key
+                            ? "border-sky-300 ring-2 ring-sky-300/40"
+                            : popular
                             ? "border-violet-300/40 bg-gradient-to-b from-violet-500/20 to-black/20 shadow-xl shadow-violet-950/20"
                             : lifetime
                             ? "border-amber-300/30 bg-gradient-to-b from-amber-400/10 to-black/20"
@@ -1577,7 +1703,16 @@ async function loadPlans() {
                           <div className="flex items-center gap-2"><span className="text-emerald-300">✓</span> Account-based access</div>
                           <div className="flex items-center gap-2"><span className="text-emerald-300">✓</span> Manual payment verification</div>
                         </div>
-                      </div>
+                        <div className={`mt-5 rounded-full px-4 py-2 text-center text-xs font-black ${
+                          selectedInternationalKey === internationalPlan.key
+                            ? "bg-sky-300 text-black"
+                            : "bg-white/10 text-white/70"
+                        }`}>
+                          {selectedInternationalKey === internationalPlan.key
+                            ? "✓ Selected"
+                            : "Select this plan"}
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -1612,6 +1747,55 @@ async function loadPlans() {
                       {upiCopied ? "✓ UPI ID Copied" : "Copy UPI ID"}
                     </button>
                   </div>
+                  <form onSubmit={submitInternationalPayment} className="mt-6 border-t border-white/10 pt-6">
+                    <h4 className="text-lg font-black text-white">
+                      Submit your payment transaction
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-white/45">
+                      1. Select one plan above. 2. Complete the payment only if your payment app supports this UPI ID. 3. Enter the transaction ID / UTR from your successful payment receipt below.
+                    </p>
+
+                    <div className="mt-4 rounded-2xl border border-sky-200/10 bg-sky-300/[0.05] p-4 text-sm">
+                      <div className="text-xs text-white/40">Selected international plan</div>
+                      <div className="mt-1 font-black text-white">
+                        {selectedInternationalKey
+                          ? `${INTERNATIONAL_PLANS.find((item) => item.key === selectedInternationalKey)?.title} — $${INTERNATIONAL_PLANS.find((item) => item.key === selectedInternationalKey)?.price} USD`
+                          : "Please select a plan above"}
+                      </div>
+                    </div>
+
+                    <label className="mt-5 block text-xs font-bold text-white/60" htmlFor="international-utr">
+                      UTR / Transaction ID
+                    </label>
+                    <input
+                      id="international-utr"
+                      value={internationalUtr}
+                      onChange={(event) => setInternationalUtr(event.target.value)}
+                      placeholder="Enter transaction ID after successful payment"
+                      autoComplete="off"
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-white outline-none placeholder:text-white/25 focus:border-sky-300/50"
+                    />
+
+                    {internationalError && (
+                      <div role="alert" className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+                        {internationalError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={internationalSubmitting}
+                      className="mt-5 w-full rounded-full bg-sky-300 py-4 text-sm font-black text-black transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {internationalSubmitting
+                        ? "Submitting transaction..."
+                        : "Submit International Payment"}
+                    </button>
+                    <p className="mt-3 text-xs leading-5 text-white/35">
+                      Your request will be marked pending and follow the existing admin approval process. Do not submit until your payment has actually succeeded.
+                    </p>
+                  </form>
+
                   <div className="mt-4 rounded-2xl border border-amber-200/10 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100/65">
                     Important: UPI availability varies by country, bank, and payment app. Showing this ID does not guarantee that an international transfer will work. Confirm support before sending money.
                   </div>
