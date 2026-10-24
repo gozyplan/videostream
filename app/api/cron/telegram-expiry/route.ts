@@ -12,6 +12,7 @@ type TelegramResult = {
 type Subscription = {
   id: number | string;
   user_id: string;
+  plan_id: number | string;
   expires_at: string | null;
   status: string;
 };
@@ -62,11 +63,10 @@ async function telegram(
 
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
-  const authorization = request.headers.get("authorization");
 
   if (
     !cronSecret ||
-    authorization !== `Bearer ${cronSecret}`
+    request.headers.get("authorization") !== `Bearer ${cronSecret}`
   ) {
     return jsonError("Unauthorized", 401);
   }
@@ -104,26 +104,51 @@ export async function GET(request: Request) {
 
   const now = new Date().toISOString();
 
-  const {
-    data: expired,
-    error: expiredError,
-  } = await supabase
+  // Find active HDLink plans separately; no subscriptions-plans
+  // foreign-key relationship is required.
+  const { data: plans, error: plansError } = await supabase
+    .from("plans")
+    .select("id")
+    .eq("source", "hdlink")
+    .eq("is_active", true);
+
+  if (plansError) {
+    console.error("HDLink plans query failed:", plansError);
+
+    return jsonError("Could not load HDLink plans", 500, {
+      code: plansError.code,
+      details: plansError.message,
+      hint: plansError.hint,
+    });
+  }
+
+  const planIds = (plans ?? []).map((plan) => plan.id);
+
+  if (planIds.length === 0) {
+    return NextResponse.json({
+      success: true,
+      message: "No active HDLink plans found",
+      checked: 0,
+      removed: 0,
+      skipped: 0,
+      missingMembership: 0,
+      errors: [],
+      checkedAt: now,
+    });
+  }
+
+  const { data: expired, error: expiredError } = await supabase
     .from("subscriptions")
-    .select("id, user_id, expires_at, status, plans!inner(source)")
+    .select("id, user_id, plan_id, expires_at, status")
+    .in("plan_id", planIds)
     .in("status", ["active", "expired"])
-    .eq("plans.source", "hdlink")
     .not("expires_at", "is", null)
     .lte("expires_at", now)
     .order("expires_at", { ascending: true })
     .limit(1000);
 
   if (expiredError) {
-    console.error("Expired subscription query failed:", {
-      code: expiredError.code,
-      message: expiredError.message,
-      details: expiredError.details,
-      hint: expiredError.hint,
-    });
+    console.error("Expired subscription query failed:", expiredError);
 
     return jsonError("Could not load expired subscriptions", 500, {
       code: expiredError.code,
@@ -136,6 +161,7 @@ export async function GET(request: Request) {
   let removed = 0;
   let skipped = 0;
   let missingMembership = 0;
+
   const errors: string[] = [];
   const processedUsers = new Set<string>();
 
@@ -151,13 +177,13 @@ export async function GET(request: Request) {
     processedUsers.add(userId);
 
     try {
-      // Keep access if this user has another valid HDLink subscription.
+      // Keep members who have another valid active HDLink plan.
       const { data: valid, error: validError } = await supabase
         .from("subscriptions")
-        .select("id, expires_at, plans!inner(source)")
+        .select("id, expires_at, plan_id")
         .eq("user_id", subscription.user_id)
+        .in("plan_id", planIds)
         .eq("status", "active")
-        .eq("plans.source", "hdlink")
         .or(`expires_at.gt.${now},expires_at.is.null`)
         .limit(1);
 
@@ -174,13 +200,14 @@ export async function GET(request: Request) {
           .from("subscriptions")
           .update({ status: "expired" })
           .eq("user_id", subscription.user_id)
+          .in("plan_id", planIds)
           .eq("status", "active")
           .not("expires_at", "is", null)
           .lte("expires_at", now);
 
         if (statusError) {
           throw new Error(
-            `Could not update old subscriptions: ${statusError.message}`
+            `Could not update expired subscriptions: ${statusError.message}`
           );
         }
 
@@ -192,9 +219,7 @@ export async function GET(request: Request) {
         error: membershipError,
       } = await supabase
         .from("telegram_memberships")
-        .select(
-          "id, telegram_user_id, telegram_chat_id, removed_at"
-        )
+        .select("id, telegram_user_id, telegram_chat_id, removed_at")
         .eq("user_id", subscription.user_id)
         .eq("telegram_chat_id", chatId)
         .is("removed_at", null)
@@ -214,6 +239,7 @@ export async function GET(request: Request) {
           .from("subscriptions")
           .update({ status: "expired" })
           .eq("user_id", subscription.user_id)
+          .in("plan_id", planIds)
           .eq("status", "active")
           .not("expires_at", "is", null)
           .lte("expires_at", now);
@@ -230,14 +256,12 @@ export async function GET(request: Request) {
       const member = membership as Membership;
       const telegramUserId = Number(member.telegram_user_id);
 
-      if (
-        !Number.isSafeInteger(telegramUserId) ||
-        telegramUserId <= 0
-      ) {
+      if (!Number.isSafeInteger(telegramUserId) || telegramUserId <= 0) {
         throw new Error("Invalid telegram_user_id in membership");
       }
 
-      // Ban and unban removes the user while allowing a future invite.
+      // Ban and immediately unban to remove access without
+      // permanently blocking a future invitation.
       await telegram(botToken!, "banChatMember", {
         chat_id: chatId,
         user_id: telegramUserId,
@@ -262,7 +286,7 @@ export async function GET(request: Request) {
 
       if (membershipUpdateError) {
         throw new Error(
-          `Member removed from Telegram but membership update failed: ${membershipUpdateError.message}`
+          `Telegram removal succeeded but membership update failed: ${membershipUpdateError.message}`
         );
       }
 
@@ -272,6 +296,7 @@ export async function GET(request: Request) {
         .from("subscriptions")
         .update({ status: "expired" })
         .eq("user_id", subscription.user_id)
+        .in("plan_id", planIds)
         .eq("status", "active")
         .not("expires_at", "is", null)
         .lte("expires_at", now);
