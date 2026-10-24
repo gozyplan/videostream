@@ -564,7 +564,7 @@ export default function HDLinkPremiumPage() {
                   disabled={telegramLoading}
                   className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-full bg-[#229ED9] px-8 py-4 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#168dcc] hover:shadow-2xl active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
-                  {telegramLoading ? "Connecting..." : "Connect Telegram"}
+                  {telegramLoading ? "Preparing Secure Invite..." : "Unlock Your Telegram Access"}
                   <span className="text-lg">â†’</span>
                 </button>
 
