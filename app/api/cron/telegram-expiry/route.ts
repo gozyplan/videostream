@@ -1,30 +1,46 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID!;
-const CRON_SECRET = process.env.CRON_SECRET!;
-
 type TelegramResult = {
   ok: boolean;
   description?: string;
 };
 
+type Subscription = {
+  id: number | string;
+  user_id: string;
+  expires_at: string | null;
+  status: string;
+};
+
+type Membership = {
+  id: number | string;
+  telegram_user_id: number | string;
+  telegram_chat_id: number | string;
+  removed_at: string | null;
+};
+
+function jsonError(
+  message: string,
+  status: number,
+  extra: Record<string, unknown> = {}
+) {
+  return NextResponse.json(
+    { error: message, ...extra },
+    { status }
+  );
+}
+
 async function telegram(
+  botToken: string,
   method: string,
   body: Record<string, unknown>
 ) {
   const response = await fetch(
-    `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
+    `https://api.telegram.org/bot${botToken}/${method}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -33,8 +49,7 @@ async function telegram(
     }
   );
 
-  const result =
-    (await response.json()) as TelegramResult;
+  const result = (await response.json()) as TelegramResult;
 
   if (!response.ok || !result.ok) {
     throw new Error(
@@ -46,44 +61,53 @@ async function telegram(
 }
 
 export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
 
   if (
-    !CRON_SECRET ||
-    authorization !== `Bearer ${CRON_SECRET}`
+    !cronSecret ||
+    authorization !== `Bearer ${cronSecret}`
   ) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
+    return jsonError("Unauthorized", 401);
   }
 
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    !BOT_TOKEN ||
-    !CHAT_ID
-  ) {
-    return NextResponse.json(
-      { error: "Required environment variables are missing" },
-      { status: 500 }
-    );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatIdValue = process.env.TELEGRAM_CHAT_ID;
+
+  const missingVariables = [
+    !supabaseUrl && "NEXT_PUBLIC_SUPABASE_URL",
+    !serviceRoleKey && "SUPABASE_SERVICE_ROLE_KEY",
+    !botToken && "TELEGRAM_BOT_TOKEN",
+    !chatIdValue && "TELEGRAM_CHAT_ID",
+  ].filter(Boolean);
+
+  if (missingVariables.length > 0) {
+    return jsonError("Required environment variables are missing", 500, {
+      missing: missingVariables,
+    });
   }
 
-  const chatId = Number(CHAT_ID);
+  const chatId = Number(chatIdValue);
 
   if (!Number.isSafeInteger(chatId) || chatId === 0) {
-    return NextResponse.json(
-      { error: "TELEGRAM_CHAT_ID is invalid" },
-      { status: 500 }
-    );
+    return jsonError("TELEGRAM_CHAT_ID is invalid", 500);
   }
+
+  const supabase = createClient(supabaseUrl!, serviceRoleKey!, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 
   const now = new Date().toISOString();
 
-  // Include older expired subscriptions as well as newly
-  // expired active subscriptions.
-  const { data: expired, error } = await supabase
+  const {
+    data: expired,
+    error: expiredError,
+  } = await supabase
     .from("subscriptions")
     .select("id, user_id, expires_at, status, plans!inner(source)")
     .in("status", ["active", "expired"])
@@ -93,13 +117,19 @@ export async function GET(request: Request) {
     .order("expires_at", { ascending: true })
     .limit(1000);
 
-  if (error) {
-    console.error("Expired subscription query failed:", error);
+  if (expiredError) {
+    console.error("Expired subscription query failed:", {
+      code: expiredError.code,
+      message: expiredError.message,
+      details: expiredError.details,
+      hint: expiredError.hint,
+    });
 
-    return NextResponse.json(
-      { error: "Could not load expired subscriptions" },
-      { status: 500 }
-    );
+    return jsonError("Could not load expired subscriptions", 500, {
+      code: expiredError.code,
+      details: expiredError.message,
+      hint: expiredError.hint,
+    });
   }
 
   let checked = 0;
@@ -109,21 +139,19 @@ export async function GET(request: Request) {
   const errors: string[] = [];
   const processedUsers = new Set<string>();
 
-  for (const subscription of expired ?? []) {
+  for (const subscription of (expired ?? []) as Subscription[]) {
     checked++;
 
     const userId = String(subscription.user_id);
 
+    if (processedUsers.has(userId)) {
+      continue;
+    }
+
+    processedUsers.add(userId);
+
     try {
-      // Process each user only once in this run.
-      if (processedUsers.has(userId)) {
-        continue;
-      }
-
-      processedUsers.add(userId);
-
-      // Do not remove users who have another valid HDLink
-      // subscription. A null expiry is treated as non-expiring.
+      // Keep access if this user has another valid HDLink subscription.
       const { data: valid, error: validError } = await supabase
         .from("subscriptions")
         .select("id, expires_at, plans!inner(source)")
@@ -134,48 +162,52 @@ export async function GET(request: Request) {
         .limit(1);
 
       if (validError) {
-        throw validError;
+        throw new Error(
+          `Valid subscription query failed (${validError.code}): ${validError.message}`
+        );
       }
 
       if (valid && valid.length > 0) {
         skipped++;
 
-        // Close the old expired subscription if it is still
-        // marked active. Keep the valid subscription untouched.
         const { error: statusError } = await supabase
           .from("subscriptions")
           .update({ status: "expired" })
           .eq("user_id", subscription.user_id)
           .eq("status", "active")
+          .not("expires_at", "is", null)
           .lte("expires_at", now);
 
         if (statusError) {
-          throw statusError;
+          throw new Error(
+            `Could not update old subscriptions: ${statusError.message}`
+          );
         }
 
         continue;
       }
 
-      // Find this user's active Telegram membership record.
-      const { data: membership, error: membershipError } =
-        await supabase
-          .from("telegram_memberships")
-          .select(
-            "id, telegram_user_id, telegram_chat_id, removed_at"
-          )
-          .eq("user_id", subscription.user_id)
-          .eq("telegram_chat_id", chatId)
-          .is("removed_at", null)
-          .limit(1)
-          .maybeSingle();
+      const {
+        data: membership,
+        error: membershipError,
+      } = await supabase
+        .from("telegram_memberships")
+        .select(
+          "id, telegram_user_id, telegram_chat_id, removed_at"
+        )
+        .eq("user_id", subscription.user_id)
+        .eq("telegram_chat_id", chatId)
+        .is("removed_at", null)
+        .limit(1)
+        .maybeSingle();
 
       if (membershipError) {
-        throw membershipError;
+        throw new Error(
+          `Membership query failed (${membershipError.code}): ${membershipError.message}`
+        );
       }
 
       if (!membership) {
-        // There is no active membership record to remove.
-        // Still close the user's expired subscriptions.
         missingMembership++;
 
         const { error: statusError } = await supabase
@@ -187,13 +219,16 @@ export async function GET(request: Request) {
           .lte("expires_at", now);
 
         if (statusError) {
-          throw statusError;
+          throw new Error(
+            `Could not expire subscription: ${statusError.message}`
+          );
         }
 
         continue;
       }
 
-      const telegramUserId = Number(membership.telegram_user_id);
+      const member = membership as Membership;
+      const telegramUserId = Number(member.telegram_user_id);
 
       if (
         !Number.isSafeInteger(telegramUserId) ||
@@ -202,37 +237,38 @@ export async function GET(request: Request) {
         throw new Error("Invalid telegram_user_id in membership");
       }
 
-      // Ban and immediately unban to remove the user without
-      // permanently blocking a future invitation.
-      await telegram("banChatMember", {
+      // Ban and unban removes the user while allowing a future invite.
+      await telegram(botToken!, "banChatMember", {
         chat_id: chatId,
         user_id: telegramUserId,
       });
 
-      await telegram("unbanChatMember", {
+      await telegram(botToken!, "unbanChatMember", {
         chat_id: chatId,
         user_id: telegramUserId,
         only_if_banned: true,
       });
 
-      // Mark membership removed only after Telegram succeeds.
-      const { error: updateMembershipError } = await supabase
+      const removedAt = new Date().toISOString();
+
+      const { error: membershipUpdateError } = await supabase
         .from("telegram_memberships")
         .update({
-          removed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          removed_at: removedAt,
+          updated_at: removedAt,
         })
-        .eq("id", membership.id)
+        .eq("id", member.id)
         .is("removed_at", null);
 
-      if (updateMembershipError) {
-        throw updateMembershipError;
+      if (membershipUpdateError) {
+        throw new Error(
+          `Member removed from Telegram but membership update failed: ${membershipUpdateError.message}`
+        );
       }
 
       removed++;
 
-      // Mark expired subscriptions for this user as expired.
-      const { error: updateSubscriptionError } = await supabase
+      const { error: subscriptionUpdateError } = await supabase
         .from("subscriptions")
         .update({ status: "expired" })
         .eq("user_id", subscription.user_id)
@@ -240,8 +276,10 @@ export async function GET(request: Request) {
         .not("expires_at", "is", null)
         .lte("expires_at", now);
 
-      if (updateSubscriptionError) {
-        throw updateSubscriptionError;
+      if (subscriptionUpdateError) {
+        throw new Error(
+          `Telegram removal succeeded but subscription update failed: ${subscriptionUpdateError.message}`
+        );
       }
     } catch (err) {
       const message =
