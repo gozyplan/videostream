@@ -41,7 +41,7 @@ const WHATSAPP_URL =
 const PLAN_CONFIG = [
   {
     key: "day",
-    price: 90,
+    price: 50,
     duration: 1,
     title: "1 Day",
     subtitle: "Quick Access",
@@ -529,7 +529,7 @@ async function loadPlans() {
     {
       id: 7,
       title: "Quick Access",
-      price: 90,
+      price: 50,
       duration_days: 1,
     },
     {
